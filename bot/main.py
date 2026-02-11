@@ -7,8 +7,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+import math
+import time
+import random
+from datetime import datetime, timedelta
 
-from config import TELEGRAM_BOT_TOKEN
+from config import TELEGRAM_BOT_TOKEN, SIGHTING_EXPIRY_MINUTES, MAX_REPORTS_PER_HOUR
 
 # Set up logging
 logging.basicConfig(
@@ -74,6 +78,7 @@ user_subscriptions = {}  # telegram_id -> set of zone names
 recent_sightings = []    # list of {zone, description, time, reporter, lat, lng, ...}
 user_stats = {}          # telegram_id -> {report_count, username, accuracy_score, total_feedback}
 sighting_feedback = {}   # sighting_id -> {user_id: 'positive'/'negative'}
+user_report_times = {}   # user_id -> list of datetime (report timestamps)
 
 
 def get_reporter_badge(report_count):
@@ -119,8 +124,6 @@ def calculate_accuracy_score(user_id):
 
 def generate_sighting_id():
     """Generate unique sighting ID."""
-    import time
-    import random
     return f"{int(time.time())}_{random.randint(1000, 9999)}"
 
 
@@ -454,11 +457,46 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("❌ Report expired. Please start again with /report")
         return
     
-    from datetime import datetime
-    
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name or "Anonymous"
-    
+
+    # --- Rate limiting ---
+    now = datetime.now()
+    one_hour_ago = now - timedelta(hours=1)
+
+    if user_id not in user_report_times:
+        user_report_times[user_id] = []
+
+    # Prune timestamps older than 1 hour
+    user_report_times[user_id] = [
+        t for t in user_report_times[user_id] if t > one_hour_ago
+    ]
+
+    if len(user_report_times[user_id]) >= MAX_REPORTS_PER_HOUR:
+        oldest = user_report_times[user_id][0]
+        wait_mins = int((oldest + timedelta(hours=1) - now).seconds / 60) + 1
+        await query.edit_message_text(
+            f"⚠️ Rate limit reached.\n\n"
+            f"You can submit up to {MAX_REPORTS_PER_HOUR} reports per hour.\n"
+            f"Please try again in ~{wait_mins} minute(s)."
+        )
+        return
+
+    # --- Duplicate detection ---
+    DUPLICATE_WINDOW_MINUTES = 5
+    duplicate_cutoff = now - timedelta(minutes=DUPLICATE_WINDOW_MINUTES)
+
+    for existing in recent_sightings:
+        if existing['zone'] == zone_name and existing['time'] > duplicate_cutoff:
+            mins_ago = int((now - existing['time']).seconds / 60)
+            await query.edit_message_text(
+                f"⚠️ Duplicate report.\n\n"
+                f"A warden was already reported in {zone_name} "
+                f"{mins_ago} minute(s) ago.\n\n"
+                f"Check /recent for current sightings."
+            )
+            return
+
     # Update user stats
     if user_id not in user_stats:
         user_stats[user_id] = {'report_count': 0, 'username': username, 'accuracy_score': 1.0, 'total_feedback': 0}
@@ -546,6 +584,9 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
             except Exception as e:
                 logger.error(f"Failed to send alert to {uid}: {e}")
     
+    # Record report timestamp for rate limiting
+    user_report_times[user_id].append(datetime.now())
+
     # Update user's accuracy in stats
     user_stats[user_id]['accuracy_score'] = accuracy_score
     user_stats[user_id]['total_feedback'] = total_feedback
@@ -563,6 +604,7 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data.pop('pending_report_lat', None)
     context.user_data.pop('pending_report_lng', None)
     context.user_data.pop('awaiting_description', None)
+    context.user_data.pop('awaiting_location', None)
 
 
 async def handle_report_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -574,6 +616,7 @@ async def handle_report_cancel(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.pop('pending_report_lat', None)
     context.user_data.pop('pending_report_lng', None)
     context.user_data.pop('awaiting_description', None)
+    context.user_data.pop('awaiting_location', None)
     await query.edit_message_text("❌ Report cancelled.")
 
 
@@ -585,7 +628,17 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     # Extract sighting ID from callback data
     data = query.data
     sighting_id = data.replace("feedback_pos_", "").replace("feedback_neg_", "")
-    
+
+    # --- Self-rating prevention ---
+    reporter_id_for_check = None
+    for s in recent_sightings:
+        if s.get('id') == sighting_id:
+            reporter_id_for_check = s.get('reporter_id')
+            break
+    if reporter_id_for_check == user_id:
+        await query.answer("You cannot rate your own sighting.", show_alert=True)
+        return
+
     # Check if user already gave feedback on this sighting
     if sighting_id in sighting_feedback:
         if user_id in sighting_feedback[sighting_id]:
@@ -680,7 +733,6 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
 
 async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /recent command."""
-    from datetime import datetime, timedelta
     
     user_id = update.effective_user.id
     user_zones = user_subscriptions.get(user_id, set())
@@ -692,7 +744,7 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    cutoff = datetime.now() - timedelta(minutes=30)
+    cutoff = datetime.now() - timedelta(minutes=SIGHTING_EXPIRY_MINUTES)
     
     # Filter recent sightings for user's zones
     relevant = [
@@ -702,7 +754,7 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not relevant:
         await update.message.reply_text(
-            "✅ No recent warden sightings in your zones (last 30 mins).\n\n"
+            f"✅ No recent warden sightings in your zones (last {SIGHTING_EXPIRY_MINUTES} mins).\n\n"
             f"Your zones: {', '.join(sorted(user_zones))}"
         )
         return
@@ -928,6 +980,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_feedback(update, context, is_positive=False)
     elif data == "report_location":
         await query.answer()
+        context.user_data['awaiting_location'] = True
         await query.edit_message_text(
             "📍 Please share your location using Telegram's attachment button.\n\n"
             "(Tap the 📎 icon → Location → Send your current location)"
@@ -936,6 +989,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle shared location for report."""
+    if not context.user_data.get('awaiting_location'):
+        return
     location = update.message.location
     lat, lng = location.latitude, location.longitude
     
@@ -1034,8 +1089,6 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Anchorvale": (1.3964, 103.8903),
     }
     
-    import math
-    
     def distance(lat1, lng1, lat2, lng2):
         """Simple Euclidean distance (good enough for Singapore scale)."""
         return math.sqrt((lat1 - lat2) ** 2 + (lng1 - lng2) ** 2)
@@ -1055,7 +1108,8 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['pending_report_lat'] = lat
     context.user_data['pending_report_lng'] = lng
     context.user_data['awaiting_description'] = True
-    
+    context.user_data.pop('awaiting_location', None)
+
     # Check if within reasonable range (roughly 2km)
     if min_dist > 0.02:
         await update.message.reply_text(
