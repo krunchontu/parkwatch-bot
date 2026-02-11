@@ -81,10 +81,10 @@ Make the code match what the documentation already promises.
 
 Fix the user-facing friction points.
 
-- [ ] **2.1** Multi-zone subscription — keep keyboard open after each selection, add "Done" button
-- [ ] **2.2** Region-then-zone selection for manual report (match subscribe flow)
-- [ ] **2.3** Replace `ConversationHandler` for report flow (proper state machine)
-- [ ] **2.4** Improve Share Location flow — better instructions or use `KeyboardButton(request_location=True)`
+- [x] **2.1** Multi-zone subscription — keep keyboard open after each selection, add "Done" button
+- [x] **2.2** Region-then-zone selection for manual report (match subscribe flow)
+- [x] **2.3** Replace `ConversationHandler` for report flow (proper state machine)
+- [x] **2.4** Improve Share Location flow — better instructions or use `KeyboardButton(request_location=True)`
 
 ### Phase 3: Data Persistence
 
