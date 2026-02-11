@@ -12,7 +12,10 @@ import math
 import re
 import time
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# Singapore Time (UTC+8)
+SGT = timezone(timedelta(hours=8))
 
 from config import TELEGRAM_BOT_TOKEN, DATABASE_URL, SIGHTING_EXPIRY_MINUTES, MAX_REPORTS_PER_HOUR, SIGHTING_RETENTION_DAYS, FEEDBACK_WINDOW_HOURS
 from database import get_db, init_db, close_db
@@ -114,7 +117,12 @@ def build_alert_message(sighting, pos, neg, badge, accuracy_indicator,
     lat = sighting.get('lat')
     lng = sighting.get('lng')
 
-    time_str = reported_at.strftime('%I:%M %p')
+    # Convert to SGT for display; reported_at may be naive (UTC) or aware
+    if reported_at.tzinfo is None:
+        reported_at_sgt = reported_at.replace(tzinfo=timezone.utc).astimezone(SGT)
+    else:
+        reported_at_sgt = reported_at.astimezone(SGT)
+    time_str = reported_at_sgt.strftime('%I:%M %p SGT')
 
     msg = f"🚨 WARDEN ALERT — {zone}\n"
     msg += f"🕐 Spotted: {time_str}\n"
