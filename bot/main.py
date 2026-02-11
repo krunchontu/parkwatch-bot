@@ -12,7 +12,8 @@ import time
 import random
 from datetime import datetime, timedelta
 
-from config import TELEGRAM_BOT_TOKEN, SIGHTING_EXPIRY_MINUTES, MAX_REPORTS_PER_HOUR
+from config import TELEGRAM_BOT_TOKEN, DATABASE_URL, SIGHTING_EXPIRY_MINUTES, MAX_REPORTS_PER_HOUR, SIGHTING_RETENTION_DAYS
+from database import get_db, init_db, close_db
 
 # Set up logging
 logging.basicConfig(
@@ -73,13 +74,6 @@ ZONES = {
     }
 }
 
-# In-memory storage (will move to database later)
-user_subscriptions = {}  # telegram_id -> set of zone names
-recent_sightings = []    # list of {zone, description, time, reporter, lat, lng, ...}
-user_stats = {}          # telegram_id -> {report_count, username, accuracy_score, total_feedback}
-sighting_feedback = {}   # sighting_id -> {user_id: 'positive'/'negative'}
-user_report_times = {}   # user_id -> list of datetime (report timestamps)
-
 
 def get_reporter_badge(report_count):
     """Return badge based on number of reports."""
@@ -105,23 +99,6 @@ def get_accuracy_indicator(accuracy_score, total_feedback):
         return "❌"  # Low accuracy - possible spammer
 
 
-def calculate_accuracy_score(user_id):
-    """Calculate accuracy score for a reporter based on all their sightings."""
-    total_positive = 0
-    total_negative = 0
-
-    for sighting in recent_sightings:
-        if sighting.get('reporter_id') == user_id:
-            total_positive += sighting.get('feedback_positive', 0)
-            total_negative += sighting.get('feedback_negative', 0)
-
-    total = total_positive + total_negative
-    if total == 0:
-        return 1.0, 0  # No feedback yet, assume good
-
-    return total_positive / total, total
-
-
 def generate_sighting_id():
     """Generate unique sighting ID."""
     return f"{int(time.time())}_{random.randint(1000, 9999)}"
@@ -131,13 +108,13 @@ def generate_sighting_id():
 CHOOSING_METHOD, SELECTING_REGION, SELECTING_ZONE, AWAITING_LOCATION, AWAITING_DESCRIPTION, CONFIRMING = range(6)
 
 
-def build_zone_keyboard(region_key, user_id):
+async def build_zone_keyboard(region_key, user_id):
     """Build zone keyboard with subscription status indicators."""
     region = ZONES.get(region_key)
     if not region:
         return InlineKeyboardMarkup([])
 
-    user_zones = user_subscriptions.get(user_id, set())
+    user_zones = await get_db().get_subscriptions(user_id)
     keyboard = []
     for zone in region["zones"]:
         prefix = "✅ " if zone in user_zones else ""
@@ -181,7 +158,7 @@ async def handle_region_selection(update: Update, context: ContextTypes.DEFAULT_
     await query.edit_message_text(
         f"Select zones in {region['name']}:\n\n"
         f"(Tap to subscribe/unsubscribe, then tap Done)",
-        reply_markup=build_zone_keyboard(region_key, user_id)
+        reply_markup=await build_zone_keyboard(region_key, user_id)
     )
 
 
@@ -192,16 +169,15 @@ async def handle_zone_selection(update: Update, context: ContextTypes.DEFAULT_TY
     zone_name = query.data.replace("zone_", "")
     user_id = update.effective_user.id
 
-    # Initialize user subscriptions if needed
-    if user_id not in user_subscriptions:
-        user_subscriptions[user_id] = set()
+    db = get_db()
+    current_zones = await db.get_subscriptions(user_id)
 
     # Toggle subscription
-    if zone_name in user_subscriptions[user_id]:
-        user_subscriptions[user_id].remove(zone_name)
+    if zone_name in current_zones:
+        await db.remove_subscription(user_id, zone_name)
         await query.answer(f"❌ Unsubscribed from {zone_name}")
     else:
-        user_subscriptions[user_id].add(zone_name)
+        await db.add_subscription(user_id, zone_name)
         await query.answer(f"✅ Subscribed to {zone_name}")
 
     # Rebuild keyboard to show updated status (keeps keyboard open)
@@ -218,7 +194,7 @@ async def handle_zone_selection(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(
             f"Select zones in {region['name']}:\n\n"
             f"(Tap to subscribe/unsubscribe, then tap Done)",
-            reply_markup=build_zone_keyboard(region_key, user_id)
+            reply_markup=await build_zone_keyboard(region_key, user_id)
         )
 
 
@@ -230,7 +206,7 @@ async def handle_zone_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     context.user_data.pop('current_region', None)
 
-    subs = user_subscriptions.get(user_id, set())
+    subs = await get_db().get_subscriptions(user_id)
     if subs:
         sub_list = ", ".join(sorted(subs))
         await query.edit_message_text(
@@ -277,7 +253,7 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def myzones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /myzones command."""
     user_id = update.effective_user.id
-    subs = user_subscriptions.get(user_id, set())
+    subs = await get_db().get_subscriptions(user_id)
 
     if subs:
         sub_list = "\n".join(f"• {z}" for z in sorted(subs))
@@ -296,7 +272,7 @@ async def myzones(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /unsubscribe command."""
     user_id = update.effective_user.id
-    subs = user_subscriptions.get(user_id, set())
+    subs = await get_db().get_subscriptions(user_id)
 
     if not subs:
         await update.message.reply_text(
@@ -326,12 +302,10 @@ async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFA
 
     user_id = update.effective_user.id
     data = query.data
-
-    if user_id not in user_subscriptions:
-        user_subscriptions[user_id] = set()
+    db = get_db()
 
     if data == "unsub_done":
-        subs = user_subscriptions.get(user_id, set())
+        subs = await db.get_subscriptions(user_id)
         if subs:
             await query.edit_message_text(
                 f"✅ Done! You're subscribed to {len(subs)} zone(s):\n"
@@ -345,7 +319,7 @@ async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFA
         return
 
     if data == "unsub_all":
-        user_subscriptions[user_id] = set()
+        await db.clear_subscriptions(user_id)
         await query.edit_message_text(
             "🗑️ Unsubscribed from all zones.\n\n"
             "Use /start to subscribe to new zones."
@@ -354,13 +328,10 @@ async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFA
 
     # Single zone unsubscribe
     zone_name = data.replace("unsub_", "")
-
-    if zone_name in user_subscriptions[user_id]:
-        user_subscriptions[user_id].remove(zone_name)
-        await query.answer(f"❌ Unsubscribed from {zone_name}")
+    await db.remove_subscription(user_id, zone_name)
 
     # Rebuild keyboard with remaining subscriptions
-    subs = user_subscriptions.get(user_id, set())
+    subs = await db.get_subscriptions(user_id)
 
     if not subs:
         await query.edit_message_text(
@@ -585,22 +556,17 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
 
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name or "Anonymous"
+    db = get_db()
 
     # --- Rate limiting ---
     now = datetime.now()
     one_hour_ago = now - timedelta(hours=1)
 
-    if user_id not in user_report_times:
-        user_report_times[user_id] = []
+    report_count_hour = await db.count_reports_since(user_id, one_hour_ago)
 
-    # Prune timestamps older than 1 hour
-    user_report_times[user_id] = [
-        t for t in user_report_times[user_id] if t > one_hour_ago
-    ]
-
-    if len(user_report_times[user_id]) >= MAX_REPORTS_PER_HOUR:
-        oldest = user_report_times[user_id][0]
-        wait_mins = int((oldest + timedelta(hours=1) - now).seconds / 60) + 1
+    if report_count_hour >= MAX_REPORTS_PER_HOUR:
+        oldest = await db.get_oldest_report_since(user_id, one_hour_ago)
+        wait_mins = int((oldest + timedelta(hours=1) - now).seconds / 60) + 1 if oldest else 60
         await query.edit_message_text(
             f"⚠️ Rate limit reached.\n\n"
             f"You can submit up to {MAX_REPORTS_PER_HOUR} reports per hour.\n"
@@ -610,30 +576,25 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
 
     # --- Duplicate detection ---
     DUPLICATE_WINDOW_MINUTES = 5
-    duplicate_cutoff = now - timedelta(minutes=DUPLICATE_WINDOW_MINUTES)
+    existing = await db.find_duplicate_sighting(zone_name, DUPLICATE_WINDOW_MINUTES)
 
-    for existing in recent_sightings:
-        if existing['zone'] == zone_name and existing['time'] > duplicate_cutoff:
-            mins_ago = int((now - existing['time']).seconds / 60)
-            await query.edit_message_text(
-                f"⚠️ Duplicate report.\n\n"
-                f"A warden was already reported in {zone_name} "
-                f"{mins_ago} minute(s) ago.\n\n"
-                f"Check /recent for current sightings."
-            )
-            return ConversationHandler.END
+    if existing:
+        mins_ago = int((now - existing['reported_at']).total_seconds() / 60)
+        await query.edit_message_text(
+            f"⚠️ Duplicate report.\n\n"
+            f"A warden was already reported in {zone_name} "
+            f"{mins_ago} minute(s) ago.\n\n"
+            f"Check /recent for current sightings."
+        )
+        return ConversationHandler.END
 
     # Update user stats
-    if user_id not in user_stats:
-        user_stats[user_id] = {'report_count': 0, 'username': username, 'accuracy_score': 1.0, 'total_feedback': 0}
-    user_stats[user_id]['report_count'] += 1
-    user_stats[user_id]['username'] = username
-
-    report_count = user_stats[user_id]['report_count']
+    await db.ensure_user(user_id, username)
+    report_count = await db.increment_report_count(user_id)
     badge = get_reporter_badge(report_count)
 
     # Get accuracy indicator
-    accuracy_score, total_feedback = calculate_accuracy_score(user_id)
+    accuracy_score, total_feedback = await db.calculate_accuracy(user_id)
     accuracy_indicator = get_accuracy_indicator(accuracy_score, total_feedback)
 
     # Get report details
@@ -649,29 +610,17 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
         'id': sighting_id,
         'zone': zone_name,
         'description': description,
-        'time': datetime.now(),
+        'time': now,
         'reporter_id': user_id,
         'reporter_name': username,
         'reporter_badge': badge,
         'lat': lat,
         'lng': lng,
-        'feedback_positive': 0,
-        'feedback_negative': 0
     }
-    recent_sightings.append(sighting)
-
-    # Initialize feedback tracking for this sighting
-    sighting_feedback[sighting_id] = {}
-
-    # Keep only last 100 sightings
-    if len(recent_sightings) > 100:
-        old_sighting = recent_sightings.pop(0)
-        # Clean up old feedback data
-        if old_sighting.get('id') in sighting_feedback:
-            del sighting_feedback[old_sighting['id']]
+    await db.add_sighting(sighting)
 
     # Build broadcast message
-    time_str = sighting['time'].strftime('%I:%M %p')
+    time_str = now.strftime('%I:%M %p')
     alert_msg = f"🚨 WARDEN ALERT — {zone_name}\n"
     alert_msg += f"🕐 Spotted: {time_str}\n"
     if description:
@@ -697,25 +646,20 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
         ]
     ])
 
+    subscribers = await db.get_zone_subscribers(zone_name)
     sent_count = 0
-    for uid, zones in user_subscriptions.items():
-        if zone_name in zones and uid != user_id:
-            try:
-                await context.bot.send_message(
-                    chat_id=uid,
-                    text=alert_msg,
-                    reply_markup=feedback_keyboard
-                )
-                sent_count += 1
-            except Exception as e:
-                logger.error(f"Failed to send alert to {uid}: {e}")
-
-    # Record report timestamp for rate limiting
-    user_report_times[user_id].append(datetime.now())
-
-    # Update user's accuracy in stats
-    user_stats[user_id]['accuracy_score'] = accuracy_score
-    user_stats[user_id]['total_feedback'] = total_feedback
+    for uid in subscribers:
+        if uid == user_id:
+            continue
+        try:
+            await context.bot.send_message(
+                chat_id=uid,
+                text=alert_msg,
+                reply_markup=feedback_keyboard
+            )
+            sent_count += 1
+        except Exception as e:
+            logger.error(f"Failed to send alert to {uid}: {e}")
 
     await query.edit_message_text(
         f"✅ Thanks! Alert sent to {sent_count} users in {zone_name}.\n\n"
@@ -766,68 +710,48 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     # Extract sighting ID from callback data
     data = query.data
     sighting_id = data.replace("feedback_pos_", "").replace("feedback_neg_", "")
+    db = get_db()
 
     # --- Self-rating prevention ---
-    reporter_id_for_check = None
-    for s in recent_sightings:
-        if s.get('id') == sighting_id:
-            reporter_id_for_check = s.get('reporter_id')
-            break
-    if reporter_id_for_check == user_id:
+    reporter_id = await db.get_sighting_reporter(sighting_id)
+    if reporter_id is None:
+        await query.answer("This sighting has expired.", show_alert=True)
+        return
+    if reporter_id == user_id:
         await query.answer("You cannot rate your own sighting.", show_alert=True)
         return
 
     # Check if user already gave feedback on this sighting
-    if sighting_id in sighting_feedback:
-        if user_id in sighting_feedback[sighting_id]:
-            previous = sighting_feedback[sighting_id][user_id]
-            if (previous == 'positive' and is_positive) or (previous == 'negative' and not is_positive):
-                await query.answer("You've already submitted this feedback!", show_alert=True)
-                return
-            else:
-                # User is changing their feedback
-                # Find and update the sighting
-                for sighting in recent_sightings:
-                    if sighting.get('id') == sighting_id:
-                        if previous == 'positive':
-                            sighting['feedback_positive'] = max(0, sighting.get('feedback_positive', 0) - 1)
-                        else:
-                            sighting['feedback_negative'] = max(0, sighting.get('feedback_negative', 0) - 1)
-                        break
-    else:
-        sighting_feedback[sighting_id] = {}
+    previous = await db.get_user_feedback(sighting_id, user_id)
+    new_vote = 'positive' if is_positive else 'negative'
+
+    if previous:
+        if previous == new_vote:
+            await query.answer("You've already submitted this feedback!", show_alert=True)
+            return
+        # Reverse the old vote
+        if previous == 'positive':
+            await db.update_feedback_counts(sighting_id, -1, 0)
+        else:
+            await db.update_feedback_counts(sighting_id, 0, -1)
 
     # Record the new feedback
-    sighting_feedback[sighting_id][user_id] = 'positive' if is_positive else 'negative'
+    await db.set_feedback(sighting_id, user_id, new_vote)
 
-    # Find and update the sighting
-    sighting_found = False
-    reporter_id = None
-    zone_name = ""
+    # Apply the new vote
+    if is_positive:
+        await db.update_feedback_counts(sighting_id, 1, 0)
+    else:
+        await db.update_feedback_counts(sighting_id, 0, 1)
 
-    for sighting in recent_sightings:
-        if sighting.get('id') == sighting_id:
-            sighting_found = True
-            if is_positive:
-                sighting['feedback_positive'] = sighting.get('feedback_positive', 0) + 1
-            else:
-                sighting['feedback_negative'] = sighting.get('feedback_negative', 0) + 1
-
-            reporter_id = sighting.get('reporter_id')
-            zone_name = sighting.get('zone', '')
-            pos = sighting.get('feedback_positive', 0)
-            neg = sighting.get('feedback_negative', 0)
-            break
-
-    if not sighting_found:
+    # Get updated sighting for counts
+    sighting = await db.get_sighting(sighting_id)
+    if not sighting:
         await query.answer("This sighting has expired.", show_alert=True)
         return
 
-    # Update reporter's accuracy score
-    if reporter_id and reporter_id in user_stats:
-        accuracy_score, total_feedback = calculate_accuracy_score(reporter_id)
-        user_stats[reporter_id]['accuracy_score'] = accuracy_score
-        user_stats[reporter_id]['total_feedback'] = total_feedback
+    pos = sighting['feedback_positive']
+    neg = sighting['feedback_negative']
 
     # Update the message to show feedback was recorded
     if is_positive:
@@ -841,16 +765,13 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
         # Find and update or add feedback line
         lines = original_text.split('\n')
         new_lines = []
-        feedback_updated = False
 
         for line in lines:
             if line.startswith("📊 Feedback:"):
                 new_lines.append(f"📊 Feedback: 👍 {pos} / 👎 {neg}")
-                feedback_updated = True
             elif line == "Was this accurate? Your feedback helps!":
                 new_lines.append(f"📊 Feedback: 👍 {pos} / 👎 {neg}")
                 new_lines.append("Thanks for your feedback!")
-                feedback_updated = True
             else:
                 new_lines.append(line)
 
@@ -871,9 +792,9 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
 
 async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /recent command."""
-
     user_id = update.effective_user.id
-    user_zones = user_subscriptions.get(user_id, set())
+    db = get_db()
+    user_zones = await db.get_subscriptions(user_id)
 
     if not user_zones:
         await update.message.reply_text(
@@ -882,13 +803,7 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    cutoff = datetime.now() - timedelta(minutes=SIGHTING_EXPIRY_MINUTES)
-
-    # Filter recent sightings for user's zones
-    relevant = [
-        s for s in recent_sightings
-        if s['zone'] in user_zones and s['time'] > cutoff
-    ]
+    relevant = await db.get_recent_sightings_for_zones(user_zones, SIGHTING_EXPIRY_MINUTES)
 
     if not relevant:
         await update.message.reply_text(
@@ -899,8 +814,8 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = "📋 Recent sightings in your zones:\n"
 
-    for s in sorted(relevant, key=lambda x: x['time'], reverse=True):
-        mins_ago = int((datetime.now() - s['time']).seconds / 60)
+    for s in relevant:  # already sorted by reported_at DESC from DB
+        mins_ago = int((datetime.now() - s['reported_at']).total_seconds() / 60)
 
         # Urgency indicator
         if mins_ago <= 5:
@@ -922,9 +837,8 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reporter_id = s.get('reporter_id')
         badge = s.get('reporter_badge', '🆕 New')
         accuracy_indicator = ""
-        if reporter_id and reporter_id in user_stats:
-            acc_score = user_stats[reporter_id].get('accuracy_score', 1.0)
-            total_fb = user_stats[reporter_id].get('total_feedback', 0)
+        if reporter_id:
+            acc_score, total_fb = await db.calculate_accuracy(reporter_id)
             accuracy_indicator = get_accuracy_indicator(acc_score, total_fb)
 
         if accuracy_indicator:
@@ -969,8 +883,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /mystats command - show user's reporter stats."""
     user_id = update.effective_user.id
+    db = get_db()
 
-    if user_id not in user_stats:
+    stats = await db.get_user_stats(user_id)
+    if not stats or stats['report_count'] == 0:
         await update.message.reply_text(
             "📊 *Your Reporter Stats*\n\n"
             "You haven't reported any sightings yet.\n"
@@ -979,21 +895,14 @@ async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    stats = user_stats[user_id]
-    report_count = stats.get('report_count', 0)
-    accuracy_score = stats.get('accuracy_score', 1.0)
-    total_feedback = stats.get('total_feedback', 0)
+    report_count = stats['report_count']
+    accuracy_score, total_feedback = await db.calculate_accuracy(user_id)
 
     badge = get_reporter_badge(report_count)
     accuracy_indicator = get_accuracy_indicator(accuracy_score, total_feedback)
 
     # Calculate total feedback received on user's reports
-    total_pos = 0
-    total_neg = 0
-    for sighting in recent_sightings:
-        if sighting.get('reporter_id') == user_id:
-            total_pos += sighting.get('feedback_positive', 0)
-            total_neg += sighting.get('feedback_negative', 0)
+    total_pos, total_neg = await db.get_user_feedback_totals(user_id)
 
     msg = "📊 *Your Reporter Stats*\n\n"
     msg += f"🏆 Badge: {badge}\n"
@@ -1038,14 +947,16 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get user's stats for personalized message
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name or "A friend"
+    db = get_db()
 
     report_count = 0
-    if user_id in user_stats:
-        report_count = user_stats[user_id].get('report_count', 0)
+    stats = await db.get_user_stats(user_id)
+    if stats:
+        report_count = stats['report_count']
 
     # Count total active users and sightings
-    total_users = len(user_subscriptions)
-    total_sightings = len(recent_sightings)
+    total_users = await db.get_subscriber_count()
+    total_sightings = await db.get_total_sightings_count()
 
     share_msg = f"""🚗 *ParkWatch SG — Parking Warden Alerts*
 
@@ -1266,6 +1177,23 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return AWAITING_DESCRIPTION
 
 
+async def cleanup_job(context: ContextTypes.DEFAULT_TYPE):
+    """Scheduled job to clean up old sightings."""
+    deleted = await get_db().cleanup_old_sightings(SIGHTING_RETENTION_DAYS)
+    if deleted:
+        logger.info(f"Cleaned up {deleted} old sighting(s)")
+
+
+async def post_init(application):
+    """Initialize database after application startup."""
+    await init_db(DATABASE_URL)
+
+
+async def post_shutdown(application):
+    """Close database on application shutdown."""
+    await close_db()
+
+
 def main():
     """Start the bot."""
     if not TELEGRAM_BOT_TOKEN:
@@ -1273,8 +1201,14 @@ def main():
         print("Create a .env file with: TELEGRAM_BOT_TOKEN=your_token_here")
         return
 
-    # Create application
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    # Create application with lifecycle hooks
+    app = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
+    )
 
     # ConversationHandler for report flow
     report_conv = ConversationHandler(
@@ -1328,6 +1262,9 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
 
     app.add_handler(CallbackQueryHandler(handle_callback))
+
+    # Schedule sighting cleanup every 6 hours
+    app.job_queue.run_repeating(cleanup_job, interval=21600, first=60)
 
     # Start bot
     logger.info("🚗 ParkWatch SG Bot starting...")

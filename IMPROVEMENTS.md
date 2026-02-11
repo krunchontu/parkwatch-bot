@@ -90,11 +90,11 @@ Fix the user-facing friction points.
 
 Move from in-memory to durable storage.
 
-- [ ] **3.1** Choose and integrate database (SQLite for dev, PostgreSQL for prod)
-- [ ] **3.2** Design schema: `users`, `subscriptions`, `sightings`, `feedback`, `user_stats`
-- [ ] **3.3** Migrate all in-memory stores to database
-- [ ] **3.4** Proper accuracy score calculation from full history
-- [ ] **3.5** Sighting expiry/cleanup as scheduled job
+- [x] **3.1** Choose and integrate database (SQLite for dev, PostgreSQL for prod)
+- [x] **3.2** Design schema: `users`, `subscriptions`, `sightings`, `feedback` (4 tables + 4 indexes)
+- [x] **3.3** Migrate all in-memory stores to database
+- [x] **3.4** Proper accuracy score calculation from full history
+- [x] **3.5** Sighting expiry/cleanup as scheduled job (every 6 hours)
 
 ### Phase 4: Robustness & Code Quality
 
@@ -120,9 +120,10 @@ Harden the bot for real-world usage.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `bot/main.py` | 1121 | All bot logic (handlers, storage, routing) |
-| `config.py` | 10 | Environment config (`TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, settings) |
-| `requirements.txt` | 2 | `python-telegram-bot>=21.0`, `python-dotenv==1.0.0` |
-| `.env.example` | 3 | Template for environment variables |
+| `bot/main.py` | ~1050 | All bot logic (handlers, DB integration, routing) |
+| `bot/database.py` | ~444 | Dual-driver database abstraction (SQLite/PostgreSQL) |
+| `config.py` | 13 | Environment config (`TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, settings) |
+| `requirements.txt` | 4 | `python-telegram-bot`, `python-dotenv`, `aiosqlite`, `asyncpg` |
+| `.env.example` | 5 | Template for environment variables |
 | `parking_warden_bot_spec.md` | 553 | Full specification with user flows |
 | `README.md` | 505 | User-facing documentation |
