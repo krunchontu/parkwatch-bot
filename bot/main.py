@@ -6,13 +6,15 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.error import Forbidden
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, filters, ContextTypes
 import math
+import re
 import time
 import random
 from datetime import datetime, timedelta
 
-from config import TELEGRAM_BOT_TOKEN, DATABASE_URL, SIGHTING_EXPIRY_MINUTES, MAX_REPORTS_PER_HOUR, SIGHTING_RETENTION_DAYS
+from config import TELEGRAM_BOT_TOKEN, DATABASE_URL, SIGHTING_EXPIRY_MINUTES, MAX_REPORTS_PER_HOUR, SIGHTING_RETENTION_DAYS, FEEDBACK_WINDOW_HOURS
 from database import get_db, init_db, close_db
 
 # Set up logging
@@ -99,9 +101,69 @@ def get_accuracy_indicator(accuracy_score, total_feedback):
         return "❌"  # Low accuracy - possible spammer
 
 
+def build_alert_message(sighting, pos, neg, badge, accuracy_indicator,
+                        feedback_received=False):
+    """Build the full alert message from structured sighting data.
+
+    Single source of truth for alert format — used by both the initial
+    broadcast and the feedback update path.
+    """
+    zone = sighting['zone']
+    reported_at = sighting['reported_at']
+    description = sighting.get('description')
+    lat = sighting.get('lat')
+    lng = sighting.get('lng')
+
+    time_str = reported_at.strftime('%I:%M %p')
+
+    msg = f"🚨 WARDEN ALERT — {zone}\n"
+    msg += f"🕐 Spotted: {time_str}\n"
+    if description:
+        msg += f"📝 Location: {description}\n"
+    if lat and lng:
+        msg += f"🌐 GPS: {lat:.6f}, {lng:.6f}\n"
+
+    if accuracy_indicator:
+        msg += f"👤 Reporter: {badge} {accuracy_indicator}\n"
+    else:
+        msg += f"👤 Reporter: {badge}\n"
+
+    msg += f"\n⏰ Extend your parking now!\n"
+    msg += f"\n━━━━━━━━━━━━━━━━━━━━━\n"
+
+    if feedback_received:
+        msg += f"📊 Feedback: 👍 {pos} / 👎 {neg}\n"
+        msg += "Thanks for your feedback!"
+    else:
+        msg += "Was this accurate? Your feedback helps!"
+
+    return msg
+
+
 def generate_sighting_id():
     """Generate unique sighting ID."""
     return f"{int(time.time())}_{random.randint(1000, 9999)}"
+
+
+def sanitize_description(text):
+    """Sanitize user-provided description text.
+
+    Strips whitespace, removes control characters, strips HTML tags,
+    collapses whitespace, and truncates to 100 characters.
+    Returns None if the result is empty.
+    """
+    if not text:
+        return None
+    text = text.strip()
+    # Remove control characters (U+0000-U+001F) except newline and tab
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+    # Strip HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Collapse multiple whitespace into single space
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+    text = text[:100]
+    return text if text else None
 
 
 # ConversationHandler states for report flow
@@ -523,7 +585,16 @@ async def handle_report_skip_description(update: Update, context: ContextTypes.D
 
 async def handle_description_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text input for description."""
-    description = update.message.text[:100]  # Limit to 100 chars
+    description = sanitize_description(update.message.text)
+    if description is None:
+        await update.message.reply_text(
+            "That description was empty after cleanup. Please try again, or tap Skip.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⏭️ Skip", callback_data="report_skip_description")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")]
+            ])
+        )
+        return AWAITING_DESCRIPTION
     context.user_data['pending_report_description'] = description
 
     zone_name = context.user_data.get('pending_report_zone')
@@ -619,24 +690,15 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     }
     await db.add_sighting(sighting)
 
-    # Build broadcast message
-    time_str = now.strftime('%I:%M %p')
-    alert_msg = f"🚨 WARDEN ALERT — {zone_name}\n"
-    alert_msg += f"🕐 Spotted: {time_str}\n"
-    if description:
-        alert_msg += f"📝 Location: {description}\n"
-    if lat and lng:
-        alert_msg += f"🌐 GPS: {lat:.6f}, {lng:.6f}\n"
-
-    # Show badge with accuracy indicator if available
-    if accuracy_indicator:
-        alert_msg += f"👤 Reporter: {badge} {accuracy_indicator}\n"
-    else:
-        alert_msg += f"👤 Reporter: {badge}\n"
-
-    alert_msg += f"\n⏰ Extend your parking now!\n"
-    alert_msg += f"\n━━━━━━━━━━━━━━━━━━━━━\n"
-    alert_msg += f"Was this accurate? Your feedback helps!"
+    # Build broadcast message from structured data
+    sighting_for_msg = {
+        'zone': zone_name, 'reported_at': now, 'description': description,
+        'lat': lat, 'lng': lng,
+    }
+    alert_msg = build_alert_message(
+        sighting_for_msg, pos=0, neg=0,
+        badge=badge, accuracy_indicator=accuracy_indicator,
+    )
 
     # Feedback buttons
     feedback_keyboard = InlineKeyboardMarkup([
@@ -648,6 +710,9 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
 
     subscribers = await db.get_zone_subscribers(zone_name)
     sent_count = 0
+    failed_count = 0
+    blocked_users = []
+
     for uid in subscribers:
         if uid == user_id:
             continue
@@ -658,15 +723,32 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
                 reply_markup=feedback_keyboard
             )
             sent_count += 1
+        except Forbidden:
+            logger.warning(f"User {uid} blocked the bot — removing subscriptions")
+            blocked_users.append(uid)
+            failed_count += 1
         except Exception as e:
             logger.error(f"Failed to send alert to {uid}: {e}")
+            failed_count += 1
 
-    await query.edit_message_text(
-        f"✅ Thanks! Alert sent to {sent_count} users in {zone_name}.\n\n"
-        f"🏆 You've reported {report_count} sighting(s)!\n"
+    # Clean up subscriptions for users who blocked the bot
+    for uid in blocked_users:
+        try:
+            await db.clear_subscriptions(uid)
+        except Exception as e:
+            logger.error(f"Failed to clean up subscriptions for blocked user {uid}: {e}")
+
+    confirm_msg = f"✅ Thanks! Alert sent to {sent_count} user(s) in {zone_name}."
+    if failed_count > 0:
+        confirm_msg += f"\n⚠️ {failed_count} delivery failure(s)."
+        if blocked_users:
+            confirm_msg += f" ({len(blocked_users)} inactive user(s) cleaned up.)"
+    confirm_msg += (
+        f"\n\n🏆 You've reported {report_count} sighting(s)!\n"
         f"Your badge: {badge}\n"
         f"Your accuracy: {accuracy_score*100:.0f}% ({total_feedback} ratings)"
     )
+    await query.edit_message_text(confirm_msg)
 
     # Clear pending report data
     context.user_data.pop('pending_report_zone', None)
@@ -716,10 +798,29 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     reporter_id = await db.get_sighting_reporter(sighting_id)
     if reporter_id is None:
         await query.answer("This sighting has expired.", show_alert=True)
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         return
     if reporter_id == user_id:
         await query.answer("You cannot rate your own sighting.", show_alert=True)
         return
+
+    # --- Feedback window check ---
+    sighting_data = await db.get_sighting(sighting_id)
+    if sighting_data:
+        sighting_age = datetime.now() - sighting_data['reported_at']
+        if sighting_age > timedelta(hours=FEEDBACK_WINDOW_HOURS):
+            await query.answer(
+                f"Feedback window has closed ({FEEDBACK_WINDOW_HOURS}h limit).",
+                show_alert=True,
+            )
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            return
 
     # Check if user already gave feedback on this sighting
     previous = await db.get_user_feedback(sighting_id, user_id)
@@ -744,7 +845,7 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     else:
         await db.update_feedback_counts(sighting_id, 0, 1)
 
-    # Get updated sighting for counts
+    # Get updated sighting and rebuild message from DB data
     sighting = await db.get_sighting(sighting_id)
     if not sighting:
         await query.answer("This sighting has expired.", show_alert=True)
@@ -759,25 +860,18 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     else:
         await query.answer("👎 Thanks! Marked as false alarm.", show_alert=False)
 
-    # Update message text to show current feedback count
+    # Rebuild message from structured DB data (no string parsing)
     try:
-        original_text = query.message.text
-        # Find and update or add feedback line
-        lines = original_text.split('\n')
-        new_lines = []
+        badge = sighting.get('reporter_badge', '🆕 New')
+        acc_score, total_fb = await db.calculate_accuracy(sighting['reporter_id'])
+        accuracy_ind = get_accuracy_indicator(acc_score, total_fb)
 
-        for line in lines:
-            if line.startswith("📊 Feedback:"):
-                new_lines.append(f"📊 Feedback: 👍 {pos} / 👎 {neg}")
-            elif line == "Was this accurate? Your feedback helps!":
-                new_lines.append(f"📊 Feedback: 👍 {pos} / 👎 {neg}")
-                new_lines.append("Thanks for your feedback!")
-            else:
-                new_lines.append(line)
+        new_text = build_alert_message(
+            sighting, pos=pos, neg=neg,
+            badge=badge, accuracy_indicator=accuracy_ind,
+            feedback_received=True,
+        )
 
-        new_text = '\n'.join(new_lines)
-
-        # Keep the feedback buttons so others can still vote
         feedback_keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(f"👍 Accurate ({pos})", callback_data=f"feedback_pos_{sighting_id}"),
@@ -794,7 +888,15 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /recent command."""
     user_id = update.effective_user.id
     db = get_db()
-    user_zones = await db.get_subscriptions(user_id)
+
+    try:
+        user_zones = await db.get_subscriptions(user_id)
+    except Exception as e:
+        logger.error(f"DB error in /recent (get_subscriptions): {e}")
+        await update.message.reply_text(
+            "Sorry, something went wrong fetching your zones. Please try again."
+        )
+        return
 
     if not user_zones:
         await update.message.reply_text(
@@ -803,7 +905,14 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    relevant = await db.get_recent_sightings_for_zones(user_zones, SIGHTING_EXPIRY_MINUTES)
+    try:
+        relevant = await db.get_recent_sightings_for_zones(user_zones, SIGHTING_EXPIRY_MINUTES)
+    except Exception as e:
+        logger.error(f"DB error in /recent (get_recent_sightings): {e}")
+        await update.message.reply_text(
+            "Sorry, something went wrong fetching recent sightings. Please try again."
+        )
+        return
 
     if not relevant:
         await update.message.reply_text(
@@ -1121,16 +1230,22 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Anchorvale": (1.3964, 103.8903),
     }
 
-    def distance(lat1, lng1, lat2, lng2):
-        """Simple Euclidean distance (good enough for Singapore scale)."""
-        return math.sqrt((lat1 - lat2) ** 2 + (lng1 - lng2) ** 2)
+    def haversine_meters(lat1, lng1, lat2, lng2):
+        """Haversine formula — returns distance in meters."""
+        R = 6_371_000  # Earth radius in meters
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        d_phi = math.radians(lat2 - lat1)
+        d_lambda = math.radians(lng2 - lng1)
+        a = (math.sin(d_phi / 2) ** 2
+             + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2)
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     # Find nearest zone
     nearest_zone = None
     min_dist = float('inf')
 
     for zone_name, (zone_lat, zone_lng) in ZONE_COORDS.items():
-        dist = distance(lat, lng, zone_lat, zone_lng)
+        dist = haversine_meters(lat, lng, zone_lat, zone_lng)
         if dist < min_dist:
             min_dist = dist
             nearest_zone = zone_name
@@ -1140,8 +1255,8 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['pending_report_lat'] = lat
     context.user_data['pending_report_lng'] = lng
 
-    # Check if within reasonable range (roughly 2km)
-    if min_dist > 0.02:
+    # Check if within reasonable range (2km)
+    if min_dist > 2000:
         await update.message.reply_text(
             f"📍 You're a bit far from known zones.\n"
             f"Nearest zone: {nearest_zone}\n"
@@ -1175,6 +1290,19 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
     return AWAITING_DESCRIPTION
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Global error handler — logs the full traceback and notifies the user."""
+    logger.error("Unhandled exception:", exc_info=context.error)
+    if update and isinstance(update, Update) and update.effective_chat:
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Sorry, something went wrong. Please try again later.",
+            )
+        except Exception:
+            pass
 
 
 async def cleanup_job(context: ContextTypes.DEFAULT_TYPE):
@@ -1262,6 +1390,9 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
 
     app.add_handler(CallbackQueryHandler(handle_callback))
+
+    # Global error handler
+    app.add_error_handler(error_handler)
 
     # Schedule sighting cleanup every 6 hours
     app.job_queue.run_repeating(cleanup_job, interval=21600, first=60)

@@ -100,12 +100,12 @@ Move from in-memory to durable storage.
 
 Harden the bot for real-world usage.
 
-- [ ] **4.1** Replace string-based message editing with stored sighting data for feedback updates
-- [ ] **4.2** Use Haversine formula for GPS distance calculation
-- [ ] **4.3** Add input sanitization for descriptions
-- [ ] **4.4** Handle broadcast failures — retry logic or notify reporter of partial delivery
-- [ ] **4.5** Clean up stale feedback buttons on expired sightings
-- [ ] **4.6** Add error handling and graceful degradation throughout
+- [x] **4.1** Replace string-based message editing with stored sighting data for feedback updates
+- [x] **4.2** Use Haversine formula for GPS distance calculation
+- [x] **4.3** Add input sanitization for descriptions
+- [x] **4.4** Handle broadcast failures — notify reporter, auto-cleanup blocked users
+- [x] **4.5** Clean up stale feedback buttons on expired sightings (24h feedback window)
+- [x] **4.6** Add error handling and graceful degradation throughout
 
 ### Phase 5: Growth Features (from Roadmap)
 
