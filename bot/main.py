@@ -1,24 +1,18 @@
 import logging
-import sys
-import os
-
-# Add parent directory to path so we can import config
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import math
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.error import Forbidden
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, filters, ContextTypes
-import math
-import re
-import time
-import random
-from datetime import datetime, timedelta, timezone
 
 # Singapore Time (UTC+8)
 SGT = timezone(timedelta(hours=8))
 
 from config import TELEGRAM_BOT_TOKEN, DATABASE_URL, SIGHTING_EXPIRY_MINUTES, MAX_REPORTS_PER_HOUR, DUPLICATE_WINDOW_MINUTES, DUPLICATE_RADIUS_METERS, SIGHTING_RETENTION_DAYS, FEEDBACK_WINDOW_HOURS
-from database import get_db, init_db, close_db
+from .database import get_db, init_db, close_db
 
 # Set up logging
 logging.basicConfig(
@@ -92,6 +86,97 @@ ZONES = {
 }
 
 
+# Zone center coordinates (lat, lng) — used for GPS → nearest zone detection
+ZONE_COORDS = {
+    # Central
+    "Tanjong Pagar": (1.2764, 103.8460),
+    "Bugis": (1.3008, 103.8553),
+    "Orchard": (1.3048, 103.8318),
+    "Chinatown": (1.2836, 103.8444),
+    "Clarke Quay": (1.2906, 103.8465),
+    "Raffles Place": (1.2840, 103.8514),
+    "Marina Bay": (1.2789, 103.8536),
+    "City Hall": (1.2931, 103.8520),
+    "Dhoby Ghaut": (1.2993, 103.8458),
+    "Somerset": (1.3006, 103.8387),
+    "Tiong Bahru": (1.2863, 103.8273),
+    "Outram": (1.2803, 103.8394),
+    "Telok Ayer": (1.2822, 103.8484),
+    "Boat Quay": (1.2875, 103.8497),
+    "Robertson Quay": (1.2908, 103.8382),
+    "River Valley": (1.2953, 103.8328),
+    # Central North
+    "Novena": (1.3204, 103.8438),
+    "Toa Payoh": (1.3343, 103.8497),
+    "Bishan": (1.3526, 103.8352),
+    "Ang Mo Kio": (1.3691, 103.8454),
+    "Marymount": (1.3487, 103.8395),
+    "Caldecott": (1.3374, 103.8395),
+    "Thomson": (1.3280, 103.8420),
+    "Braddell": (1.3405, 103.8469),
+    "Lorong Chuan": (1.3519, 103.8618),
+    # East
+    "Tampines": (1.3532, 103.9453),
+    "Bedok": (1.3236, 103.9273),
+    "Paya Lebar": (1.3176, 103.8919),
+    "Katong": (1.3050, 103.9050),
+    "Pasir Ris": (1.3732, 103.9493),
+    "Changi": (1.3576, 103.9885),
+    "Simei": (1.3432, 103.9532),
+    "Eunos": (1.3198, 103.9030),
+    "Kembangan": (1.3209, 103.9128),
+    "Marine Parade": (1.3025, 103.9053),
+    "East Coast": (1.3010, 103.9125),
+    "Geylang": (1.3166, 103.8840),
+    "Aljunied": (1.3165, 103.8829),
+    "Kallang": (1.3114, 103.8713),
+    "Lavender": (1.3073, 103.8630),
+    "Joo Chiat": (1.3137, 103.9016),
+    "Siglap": (1.3109, 103.9236),
+    "Tai Seng": (1.3358, 103.8876),
+    "Ubi": (1.3299, 103.8998),
+    "MacPherson": (1.3265, 103.8900),
+    # West
+    "Jurong East": (1.3329, 103.7436),
+    "Jurong West": (1.3400, 103.7090),
+    "Clementi": (1.3149, 103.7651),
+    "Buona Vista": (1.3073, 103.7903),
+    "Boon Lay": (1.3385, 103.7060),
+    "Pioneer": (1.3376, 103.6972),
+    "Tuas": (1.3270, 103.6500),
+    "Queenstown": (1.2942, 103.8060),
+    "Commonwealth": (1.3024, 103.7983),
+    "HarbourFront": (1.2654, 103.8212),
+    "Telok Blangah": (1.2708, 103.8098),
+    "West Coast": (1.3050, 103.7650),
+    "Dover": (1.3115, 103.7785),
+    "Holland Village": (1.3111, 103.7958),
+    "Ghim Moh": (1.3108, 103.7889),
+    "Lakeside": (1.3440, 103.7209),
+    "Chinese Garden": (1.3426, 103.7295),
+    # North
+    "Woodlands": (1.4360, 103.7865),
+    "Yishun": (1.4291, 103.8354),
+    "Sembawang": (1.4491, 103.8185),
+    "Admiralty": (1.4406, 103.8009),
+    "Marsiling": (1.4326, 103.7743),
+    "Kranji": (1.4252, 103.7620),
+    "Canberra": (1.4430, 103.8297),
+    "Khatib": (1.4174, 103.8329),
+    # North-East
+    "Hougang": (1.3612, 103.8863),
+    "Sengkang": (1.3917, 103.8953),
+    "Punggol": (1.4041, 103.9025),
+    "Serangoon": (1.3500, 103.8718),
+    "Kovan": (1.3601, 103.8850),
+    "Potong Pasir": (1.3313, 103.8688),
+    "Bartley": (1.3428, 103.8795),
+    "Buangkok": (1.3831, 103.8928),
+    "Rivervale": (1.3924, 103.9024),
+    "Anchorvale": (1.3964, 103.8903),
+}
+
+
 def get_reporter_badge(report_count):
     """Return badge based on number of reports."""
     if report_count >= 51:
@@ -161,8 +246,8 @@ def build_alert_message(sighting, pos, neg, badge, accuracy_indicator,
 
 
 def generate_sighting_id():
-    """Generate unique sighting ID."""
-    return f"{int(time.time())}_{random.randint(1000, 9999)}"
+    """Generate unique sighting ID using UUID4 (collision-proof)."""
+    return str(uuid.uuid4())
 
 
 def sanitize_description(text):
@@ -650,14 +735,15 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     db = get_db()
 
     # --- Rate limiting ---
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     one_hour_ago = now - timedelta(hours=1)
 
     report_count_hour = await db.count_reports_since(user_id, one_hour_ago)
 
     if report_count_hour >= MAX_REPORTS_PER_HOUR:
         oldest = await db.get_oldest_report_since(user_id, one_hour_ago)
-        wait_mins = int((oldest + timedelta(hours=1) - now).seconds / 60) + 1 if oldest else 60
+        wait_secs = (oldest + timedelta(hours=1) - now).total_seconds() if oldest else 3600
+        wait_mins = max(1, int(wait_secs / 60) + 1)
         await query.edit_message_text(
             f"⚠️ Rate limit reached.\n\n"
             f"You can submit up to {MAX_REPORTS_PER_HOUR} reports per hour.\n"
@@ -787,8 +873,11 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     confirm_msg += (
         f"\n\n🏆 You've reported {report_count} sighting(s)!\n"
         f"Your badge: {badge}\n"
-        f"Your accuracy: {accuracy_score*100:.0f}% ({total_feedback} ratings)"
     )
+    if total_feedback > 0:
+        confirm_msg += f"Your accuracy: {accuracy_score*100:.0f}% ({total_feedback} ratings)"
+    else:
+        confirm_msg += "Your accuracy: No ratings yet"
     await query.edit_message_text(confirm_msg)
 
     # Clear pending report data
@@ -851,7 +940,10 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     # --- Feedback window check ---
     sighting_data = await db.get_sighting(sighting_id)
     if sighting_data:
-        sighting_age = datetime.now() - sighting_data['reported_at']
+        reported_at = sighting_data['reported_at']
+        if reported_at.tzinfo is None:
+            reported_at = reported_at.replace(tzinfo=timezone.utc)
+        sighting_age = datetime.now(timezone.utc) - reported_at
         if sighting_age > timedelta(hours=FEEDBACK_WINDOW_HOURS):
             await query.answer(
                 f"Feedback window has closed ({FEEDBACK_WINDOW_HOURS}h limit).",
@@ -863,31 +955,14 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
                 pass
             return
 
-    # Check if user already gave feedback on this sighting
-    previous = await db.get_user_feedback(sighting_id, user_id)
+    # Apply feedback in a single transaction (read→upsert→update counts)
     new_vote = 'positive' if is_positive else 'negative'
+    try:
+        sighting = await db.apply_feedback(sighting_id, user_id, new_vote)
+    except ValueError:
+        await query.answer("You've already submitted this feedback!", show_alert=True)
+        return
 
-    if previous:
-        if previous == new_vote:
-            await query.answer("You've already submitted this feedback!", show_alert=True)
-            return
-        # Reverse the old vote
-        if previous == 'positive':
-            await db.update_feedback_counts(sighting_id, -1, 0)
-        else:
-            await db.update_feedback_counts(sighting_id, 0, -1)
-
-    # Record the new feedback
-    await db.set_feedback(sighting_id, user_id, new_vote)
-
-    # Apply the new vote
-    if is_positive:
-        await db.update_feedback_counts(sighting_id, 1, 0)
-    else:
-        await db.update_feedback_counts(sighting_id, 0, 1)
-
-    # Get updated sighting and rebuild message from DB data
-    sighting = await db.get_sighting(sighting_id)
     if not sighting:
         await query.answer("This sighting has expired.", show_alert=True)
         return
@@ -965,7 +1040,10 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📋 Recent sightings in your zones:\n"
 
     for s in relevant:  # already sorted by reported_at DESC from DB
-        mins_ago = int((datetime.now() - s['reported_at']).total_seconds() / 60)
+        reported_at = s['reported_at']
+        if reported_at.tzinfo is None:
+            reported_at = reported_at.replace(tzinfo=timezone.utc)
+        mins_ago = int((datetime.now(timezone.utc) - reported_at).total_seconds() / 60)
 
         # Urgency indicator
         if mins_ago <= 5:
@@ -1108,9 +1186,14 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_users = await db.get_subscriber_count()
     total_sightings = await db.get_total_sightings_count()
 
+    if total_users >= 10:
+        user_line = f"Join {total_users}+ drivers getting real-time warden alerts!"
+    else:
+        user_line = "Join drivers getting real-time warden alerts!"
+
     share_msg = f"""🚗 *ParkWatch SG — Parking Warden Alerts*
 
-Tired of parking tickets? Join {total_users}+ drivers getting real-time warden alerts!
+Tired of parking tickets? {user_line}
 
 ✅ Crowdsourced warden sightings
 ✅ Alerts for your subscribed zones
@@ -1176,102 +1259,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     location = update.message.location
     lat, lng = location.latitude, location.longitude
 
-    # Zone centers (lat, lng) - comprehensive Singapore coverage
-    ZONE_COORDS = {
-        # Central
-        "Tanjong Pagar": (1.2764, 103.8460),
-        "Bugis": (1.3008, 103.8553),
-        "Orchard": (1.3048, 103.8318),
-        "Chinatown": (1.2836, 103.8444),
-        "Clarke Quay": (1.2906, 103.8465),
-        "Raffles Place": (1.2840, 103.8514),
-        "Marina Bay": (1.2789, 103.8536),
-        "City Hall": (1.2931, 103.8520),
-        "Dhoby Ghaut": (1.2993, 103.8458),
-        "Somerset": (1.3006, 103.8387),
-        "Tiong Bahru": (1.2863, 103.8273),
-        "Outram": (1.2803, 103.8394),
-        "Telok Ayer": (1.2822, 103.8484),
-        "Boat Quay": (1.2875, 103.8497),
-        "Robertson Quay": (1.2908, 103.8382),
-        "River Valley": (1.2953, 103.8328),
-
-        # Central North
-        "Novena": (1.3204, 103.8438),
-        "Toa Payoh": (1.3343, 103.8497),
-        "Bishan": (1.3526, 103.8352),
-        "Ang Mo Kio": (1.3691, 103.8454),
-        "Marymount": (1.3487, 103.8395),
-        "Caldecott": (1.3374, 103.8395),
-        "Thomson": (1.3280, 103.8420),
-        "Braddell": (1.3405, 103.8469),
-        "Lorong Chuan": (1.3519, 103.8618),
-
-        # East
-        "Tampines": (1.3532, 103.9453),
-        "Bedok": (1.3236, 103.9273),
-        "Paya Lebar": (1.3176, 103.8919),
-        "Katong": (1.3050, 103.9050),
-        "Pasir Ris": (1.3732, 103.9493),
-        "Changi": (1.3576, 103.9885),
-        "Simei": (1.3432, 103.9532),
-        "Eunos": (1.3198, 103.9030),
-        "Kembangan": (1.3209, 103.9128),
-        "Marine Parade": (1.3025, 103.9053),
-        "East Coast": (1.3010, 103.9125),
-        "Geylang": (1.3166, 103.8840),
-        "Aljunied": (1.3165, 103.8829),
-        "Kallang": (1.3114, 103.8713),
-        "Lavender": (1.3073, 103.8630),
-        "Joo Chiat": (1.3137, 103.9016),
-        "Siglap": (1.3109, 103.9236),
-        "Tai Seng": (1.3358, 103.8876),
-        "Ubi": (1.3299, 103.8998),
-        "MacPherson": (1.3265, 103.8900),
-
-        # West
-        "Jurong East": (1.3329, 103.7436),
-        "Jurong West": (1.3400, 103.7090),
-        "Clementi": (1.3149, 103.7651),
-        "Buona Vista": (1.3073, 103.7903),
-        "Boon Lay": (1.3385, 103.7060),
-        "Pioneer": (1.3376, 103.6972),
-        "Tuas": (1.3270, 103.6500),
-        "Queenstown": (1.2942, 103.8060),
-        "Commonwealth": (1.3024, 103.7983),
-        "HarbourFront": (1.2654, 103.8212),
-        "Telok Blangah": (1.2708, 103.8098),
-        "West Coast": (1.3050, 103.7650),
-        "Dover": (1.3115, 103.7785),
-        "Holland Village": (1.3111, 103.7958),
-        "Ghim Moh": (1.3108, 103.7889),
-        "Lakeside": (1.3440, 103.7209),
-        "Chinese Garden": (1.3426, 103.7295),
-
-        # North
-        "Woodlands": (1.4360, 103.7865),
-        "Yishun": (1.4291, 103.8354),
-        "Sembawang": (1.4491, 103.8185),
-        "Admiralty": (1.4406, 103.8009),
-        "Marsiling": (1.4326, 103.7743),
-        "Kranji": (1.4252, 103.7620),
-        "Canberra": (1.4430, 103.8297),
-        "Khatib": (1.4174, 103.8329),
-
-        # North-East
-        "Hougang": (1.3612, 103.8863),
-        "Sengkang": (1.3917, 103.8953),
-        "Punggol": (1.4041, 103.9025),
-        "Serangoon": (1.3500, 103.8718),
-        "Kovan": (1.3601, 103.8850),
-        "Potong Pasir": (1.3313, 103.8688),
-        "Bartley": (1.3428, 103.8795),
-        "Buangkok": (1.3831, 103.8928),
-        "Rivervale": (1.3924, 103.9024),
-        "Anchorvale": (1.3964, 103.8903),
-    }
-
-    # Find nearest zone
+    # Find nearest zone using module-level ZONE_COORDS
     nearest_zone = None
     min_dist = float('inf')
 
