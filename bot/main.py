@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 # Singapore Time (UTC+8)
 SGT = timezone(timedelta(hours=8))
 
-from config import TELEGRAM_BOT_TOKEN, DATABASE_URL, SIGHTING_EXPIRY_MINUTES, MAX_REPORTS_PER_HOUR, SIGHTING_RETENTION_DAYS, FEEDBACK_WINDOW_HOURS
+from config import TELEGRAM_BOT_TOKEN, DATABASE_URL, SIGHTING_EXPIRY_MINUTES, MAX_REPORTS_PER_HOUR, DUPLICATE_WINDOW_MINUTES, DUPLICATE_RADIUS_METERS, SIGHTING_RETENTION_DAYS, FEEDBACK_WINDOW_HOURS
 from database import get_db, init_db, close_db
 
 # Set up logging
@@ -26,6 +26,18 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+
+def haversine_meters(lat1, lng1, lat2, lng2):
+    """Haversine formula — returns distance in meters between two GPS points."""
+    R = 6_371_000  # Earth radius in meters
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lng2 - lng1)
+    a = (math.sin(d_phi / 2) ** 2
+         + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
 
 # Zone data - comprehensive Singapore coverage
 ZONES = {
@@ -653,19 +665,42 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return ConversationHandler.END
 
-    # --- Duplicate detection ---
-    DUPLICATE_WINDOW_MINUTES = 5
-    existing = await db.find_duplicate_sighting(zone_name, DUPLICATE_WINDOW_MINUTES)
+    # --- Duplicate detection (GPS-aware) ---
+    lat = context.user_data.get('pending_report_lat')
+    lng = context.user_data.get('pending_report_lng')
+    recent_sightings = await db.find_recent_zone_sightings(zone_name, DUPLICATE_WINDOW_MINUTES)
 
-    if existing:
-        mins_ago = int((now - existing['reported_at']).total_seconds() / 60)
-        await query.edit_message_text(
-            f"⚠️ Duplicate report.\n\n"
-            f"A warden was already reported in {zone_name} "
-            f"{mins_ago} minute(s) ago.\n\n"
-            f"Check /recent for current sightings."
-        )
-        return ConversationHandler.END
+    for existing in recent_sightings:
+        existing_lat = existing.get('lat')
+        existing_lng = existing.get('lng')
+        has_both_gps = (lat is not None and lng is not None
+                        and existing_lat is not None and existing_lng is not None)
+
+        if has_both_gps:
+            dist = haversine_meters(lat, lng, existing_lat, existing_lng)
+            if dist > DUPLICATE_RADIUS_METERS:
+                continue  # Far enough apart — not a duplicate
+            # Within radius — duplicate
+            mins_ago = int((now - existing['reported_at']).total_seconds() / 60)
+            await query.edit_message_text(
+                f"⚠️ Duplicate report.\n\n"
+                f"A warden was already reported nearby ({int(dist)}m away) "
+                f"in {zone_name} {mins_ago} minute(s) ago.\n\n"
+                f"Check /recent for current sightings."
+            )
+            return ConversationHandler.END
+        else:
+            # No GPS on one or both — fall back to zone-level duplicate
+            mins_ago = int((now - existing['reported_at']).total_seconds() / 60)
+            await query.edit_message_text(
+                f"⚠️ Duplicate report.\n\n"
+                f"A warden was already reported in {zone_name} "
+                f"{mins_ago} minute(s) ago.\n\n"
+                f"💡 Tip: Share your GPS location next time to report "
+                f"multiple wardens in the same zone.\n\n"
+                f"Check /recent for current sightings."
+            )
+            return ConversationHandler.END
 
     # Update user stats
     await db.ensure_user(user_id, username)
@@ -678,8 +713,6 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
 
     # Get report details
     description = context.user_data.get('pending_report_description')
-    lat = context.user_data.get('pending_report_lat')
-    lng = context.user_data.get('pending_report_lng')
 
     # Generate unique sighting ID
     sighting_id = generate_sighting_id()
@@ -1237,16 +1270,6 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Rivervale": (1.3924, 103.9024),
         "Anchorvale": (1.3964, 103.8903),
     }
-
-    def haversine_meters(lat1, lng1, lat2, lng2):
-        """Haversine formula — returns distance in meters."""
-        R = 6_371_000  # Earth radius in meters
-        phi1, phi2 = math.radians(lat1), math.radians(lat2)
-        d_phi = math.radians(lat2 - lat1)
-        d_lambda = math.radians(lng2 - lng1)
-        a = (math.sin(d_phi / 2) ** 2
-             + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2)
-        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     # Find nearest zone
     nearest_zone = None

@@ -481,7 +481,10 @@ sighting_feedback = {
 ## Spam Prevention
 
 1. **Rate Limiting**: Max 3 reports per user per hour
-2. **Duplicate Detection**: Same zone reports within 5 mins grouped
+2. **Duplicate Detection**: GPS-aware — reports in the same zone within 5 mins are checked:
+   - If both reports have GPS coordinates: duplicate only if within **200 meters** (Haversine distance). Reports further apart are allowed through, enabling multiple wardens in the same zone.
+   - If either report lacks GPS: falls back to zone-level duplicate detection (same zone = duplicate).
+   - Users without GPS receive a tip encouraging them to share location for better accuracy.
 3. **Accuracy Tracking**: Low-accuracy reporters flagged with ❌
 4. **Community Moderation**: Multiple 👎 ratings reduce trust
 5. **Self-Rating Blocked**: Reporters cannot rate own sightings
