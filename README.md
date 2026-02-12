@@ -79,7 +79,7 @@ python bot/main.py
 
 You should see:
 ```
-2024-XX-XX XX:XX:XX - __main__ - INFO - 🚗 ParkWatch SG Bot starting...
+2026-XX-XX XX:XX:XX - __main__ - INFO - 🚗 ParkWatch SG Bot starting...
 ```
 
 ### Get Your Bot Token
@@ -248,9 +248,9 @@ Badge Progression:
 └─────────────────┘         └────────┬────────┘
                                      │
                             ┌────────▼────────┐
-                            │   In-Memory     │
-                            │   Storage       │
-                            │   (MVP)         │
+                            │  SQLite (dev)   │
+                            │  PostgreSQL     │
+                            │  (production)   │
                             └─────────────────┘
 ```
 
@@ -258,26 +258,30 @@ Badge Progression:
 
 | Component | Technology |
 |-----------|------------|
-| Bot Framework | python-telegram-bot 21+ |
+| Bot Framework | python-telegram-bot 21+ (async) |
 | Language | Python 3.10+ |
 | Config | python-dotenv |
-| Storage | In-memory (MVP) |
+| Database (dev) | SQLite via aiosqlite |
+| Database (prod) | PostgreSQL via asyncpg (connection pooling) |
+| Hosting | Local / Railway / Render / VPS |
 
 ### Project Structure
 
 ```
 parkwatch-bot/
 ├── bot/
-│   ├── __init__.py
-│   ├── main.py          # All bot logic (MVP single file)
-│   ├── handlers/        # (Future: split handlers)
-│   ├── services/        # (Future: business logic)
-│   ├── models/          # (Future: database models)
-│   └── utils/           # (Future: helpers)
-├── config.py            # Environment configuration
-├── requirements.txt     # Python dependencies
-├── .env.example         # Environment template
-└── README.md            # This file
+│   ├── __init__.py          # Package marker
+│   ├── main.py              # Bot logic, handlers, conversation flow (1437 lines)
+│   └── database.py          # Dual-driver DB abstraction (443 lines)
+├── config.py                # Environment configuration & bot settings
+├── requirements.txt         # Python dependencies
+├── .env.example             # Environment variable template
+├── Procfile                 # Heroku-style process declaration
+├── railway.toml             # Railway.app deployment config
+├── runtime.txt              # Python version specification
+├── parking_warden_bot_spec.md  # Full product specification
+├── IMPROVEMENTS.md          # Code review & improvement plan
+└── README.md                # This file
 ```
 
 ### Environment Variables
@@ -285,7 +289,10 @@ parkwatch-bot/
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | Yes |
-| `DATABASE_URL` | PostgreSQL connection string | No (future) |
+| `DATABASE_URL` | PostgreSQL connection string (SQLite used if omitted) | No |
+| `DATABASE_PRIVATE_URL` | Railway internal DB URL (takes priority over `DATABASE_URL`) | No |
+| `SIGHTING_RETENTION_DAYS` | Days to retain sighting data (default: 30) | No |
+| `FEEDBACK_WINDOW_HOURS` | Hours feedback buttons remain active (default: 24) | No |
 
 ### Bot Settings (`config.py`)
 
@@ -298,51 +305,33 @@ parkwatch-bot/
 | `SIGHTING_RETENTION_DAYS` | 30 | Days to retain sighting data |
 | `FEEDBACK_WINDOW_HOURS` | 24 | Hours feedback buttons remain active |
 
-### Data Structures (In-Memory)
+### Database Schema
 
-```python
-# User subscriptions: telegram_id -> set of zone names
-user_subscriptions = {
-    123456789: {"Tanjong Pagar", "Bugis"},
-    987654321: {"Orchard", "Somerset"}
-}
+Data is stored in 4 tables with 4 indexes. Tables are created automatically on startup.
 
-# Sightings: list of report objects
-recent_sightings = [
-    {
-        'id': '1707123456_1234',
-        'zone': 'Tanjong Pagar',
-        'description': 'Outside Maxwell Food Centre',
-        'time': datetime(2024, 2, 5, 14, 30),
-        'reporter_id': 123456789,
-        'reporter_name': 'john_doe',
-        'reporter_badge': '⭐ Regular',
-        'lat': 1.2764,
-        'lng': 103.8460,
-        'feedback_positive': 5,
-        'feedback_negative': 1
-    }
-]
+```sql
+-- User accounts and report counts
+users (telegram_id BIGINT PK, username TEXT, report_count INT, created_at TIMESTAMP)
 
-# User stats: telegram_id -> stats object
-user_stats = {
-    123456789: {
-        'report_count': 15,
-        'username': 'john_doe',
-        'accuracy_score': 0.85,
-        'total_feedback': 20
-    }
-}
+-- Zone subscriptions (many-to-many)
+subscriptions (telegram_id BIGINT, zone_name TEXT, created_at TIMESTAMP, PK(telegram_id, zone_name))
 
-# Feedback tracking: sighting_id -> {user_id: 'positive'/'negative'}
-sighting_feedback = {
-    '1707123456_1234': {
-        111111: 'positive',
-        222222: 'positive',
-        333333: 'negative'
-    }
-}
+-- Warden sighting reports
+sightings (id TEXT PK, zone TEXT, description TEXT, reported_at TIMESTAMP,
+           reporter_id BIGINT, reporter_name TEXT, reporter_badge TEXT,
+           lat REAL, lng REAL, feedback_positive INT, feedback_negative INT)
+
+-- Feedback votes on sightings
+feedback (sighting_id TEXT, user_id BIGINT, vote TEXT, created_at TIMESTAMP, PK(sighting_id, user_id))
+
+-- Indexes
+idx_sightings_zone_time ON sightings(zone, reported_at)
+idx_sightings_reporter ON sightings(reporter_id)
+idx_subscriptions_zone ON subscriptions(zone_name)
+idx_feedback_sighting ON feedback(sighting_id)
 ```
+
+**Local development** uses SQLite (`parkwatch.db` auto-created). **Production** uses PostgreSQL — just set `DATABASE_URL` and the database driver switches automatically.
 
 ---
 
@@ -363,18 +352,20 @@ Bot runs in foreground. Press Ctrl+C to stop.
 1. Push code to GitHub
 2. Sign up at [Railway](https://railway.app)
 3. Create new project → Deploy from GitHub repo
-4. Add environment variable: `TELEGRAM_BOT_TOKEN`
-5. Deploy — Railway handles the rest
+4. Add a PostgreSQL database service to the project
+5. Add environment variable: `TELEGRAM_BOT_TOKEN`
+6. Deploy — Railway auto-injects `DATABASE_URL` and handles the rest
 
 #### Option 2: Render
 
 1. Push code to GitHub
 2. Sign up at [Render](https://render.com)
-3. Create new **Background Worker** (not Web Service)
-4. Connect your GitHub repo
-5. Set build command: `pip install -r requirements.txt`
-6. Set start command: `python bot/main.py`
-7. Add environment variable: `TELEGRAM_BOT_TOKEN`
+3. Create a PostgreSQL database (or skip for SQLite)
+4. Create new **Background Worker** (not Web Service)
+5. Connect your GitHub repo
+6. Set build command: `pip install -r requirements.txt`
+7. Set start command: `python bot/main.py`
+8. Add environment variables: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL` (from step 3)
 
 #### Option 3: DigitalOcean / VPS
 
@@ -431,30 +422,66 @@ sudo systemctl status parkwatch
 
 ## Roadmap
 
-### MVP (Current) ✅
-- [x] Zone subscription system (80 zones)
-- [x] Report flow (GPS + manual selection)
-- [x] Location descriptions
+### MVP ✅
+- [x] Zone subscription system (80 zones, 6 regions)
+- [x] Report flow (GPS + manual region→zone selection)
+- [x] Location descriptions with input sanitization
 - [x] Alert broadcasting to subscribers
-- [x] Feedback system (👍/👎 buttons)
-- [x] Reporter reputation (badges + accuracy score)
+- [x] Feedback system (👍/👎 with vote changing)
+- [x] Reporter reputation (4-tier badges + accuracy score)
 - [x] Urgency indicators on recent sightings
 - [x] Share/invite functionality
 - [x] User stats tracking
 
-### Phase 2: Persistence
-- [ ] PostgreSQL database integration
-- [ ] Data persists across bot restarts
-- [ ] Historical sighting analytics
-- [ ] User preferences storage
+### Stability & UX ✅
+- [x] Rate limiting (3 reports/hour per user)
+- [x] GPS-aware duplicate detection (Haversine, 200m radius)
+- [x] Self-rating prevention (server-side)
+- [x] Multi-zone toggle subscription (keyboard stays open)
+- [x] ConversationHandler state machine for report flow
+- [x] Native GPS share button (`request_location=True`)
 
-### Phase 3: Growth Features
+### Persistence ✅
+- [x] Dual-driver database (SQLite dev / PostgreSQL prod)
+- [x] Data persists across bot restarts
+- [x] Accuracy scores from full history (SQL aggregates)
+- [x] Scheduled cleanup job (every 6 hours)
+- [x] Feedback window expiry (24h configurable)
+
+### Robustness ✅
+- [x] Alert messages rebuilt from structured DB data
+- [x] Blocked user detection and subscription cleanup
+- [x] Global error handler with user notification
+- [x] Broadcast failure reporting to reporter
+
+### Next: Bug Fixes (Phase 5)
+- [ ] Timezone-aware datetime throughout
+- [ ] Collision-proof sighting IDs (UUID)
+- [ ] Transaction-safe feedback updates
+- [ ] Rate limit timing fix
+- [ ] Foreign key constraints with cascading deletes
+
+### Next: Testing & CI (Phase 6)
+- [ ] pytest + pytest-asyncio test suite
+- [ ] Unit tests for core functions
+- [ ] Database integration tests
+- [ ] GitHub Actions CI pipeline (lint, type check, test)
+
+### Future: Production Readiness (Phase 7)
+- [ ] Webhook mode for production
+- [ ] Health check endpoint
+- [ ] Database migrations (Alembic)
+- [ ] Admin commands
+- [ ] Error tracking (Sentry)
+
+### Future: Growth Features (Phase 8)
 - [ ] Weekly/monthly leaderboard
+- [ ] Inline mode for cross-chat queries
 - [ ] Warden activity heatmaps by time/day
-- [ ] ML prediction for high-risk times/areas
-- [ ] Direct link to extend parking in Parking.sg
+- [ ] Deep linking for referral tracking
+- [ ] Multi-language support (i18n)
 
-### Phase 4: Monetisation
+### Future: Monetisation (Phase 9)
 - [ ] Freemium (1 zone free, premium for all zones)
 - [ ] Sponsored alerts from parking providers
 - [ ] Business API for fleet managers
@@ -479,11 +506,10 @@ python bot/main.py
 
 ### asyncpg build error on Windows
 
-The MVP doesn't need asyncpg. If you see this error, check that `requirements.txt` only contains:
-```
-python-telegram-bot>=21.0
-python-dotenv==1.0.0
-```
+asyncpg requires a C compiler to build on Windows. Options:
+1. Install [Microsoft Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+2. Use WSL (Windows Subsystem for Linux)
+3. For local dev only, asyncpg is not needed — SQLite is used automatically when `DATABASE_URL` is not set
 
 ### Rate limiting
 

@@ -179,18 +179,27 @@ User sends: /report
 User taps: [📝 Select Zone Manually]
     │
     ▼
-Bot shows: All zones as buttons
-           [Tanjong Pagar] [Bugis] [Orchard] ...
+Bot shows: Region selection (same as /subscribe flow)
+           [Central] [Central North] [East] [West] [North] [North-East]
+           [❌ Cancel]
+    │
+    ▼
+User taps: [West]
+    │
+    ▼
+Bot shows: Zones in West region
+           [Jurong East] [Jurong West] [Clementi] ...
+           [◀ Back to regions] [❌ Cancel]
     │
     ▼
 User taps: [Queenstown]
     │
     ▼
 Bot: "📍 Zone: Queenstown
-      
+
       📝 Send a short description of the location:
-      (e.g., 'outside Maxwell Food Centre')
-      
+      (e.g., 'outside Maxwell Food Centre' or 'Block 123 carpark')
+
       [⏭️ Skip] [❌ Cancel]"
     │
     ▼
@@ -390,7 +399,7 @@ Hougang, Sengkang, Punggol, Serangoon, Kovan, Potong Pasir, Bartley, Buangkok, R
 
 ## Technical Architecture
 
-### Current (MVP)
+### Current
 
 ```
 ┌─────────────────┐         ┌─────────────────┐
@@ -399,17 +408,18 @@ Hougang, Sengkang, Punggol, Serangoon, Kovan, Potong Pasir, Bartley, Buangkok, R
 └─────────────────┘         └────────┬────────┘
                                      │
                             ┌────────▼────────┐
-                            │   In-Memory     │
-                            │   Storage       │
+                            │  SQLite (dev)   │
+                            │  PostgreSQL     │
+                            │  (production)   │
                             └─────────────────┘
 ```
 
-### Future (Production)
+### Future (Scaled)
 
 ```
 ┌─────────────────┐         ┌─────────────────┐
 │   Telegram      │◄───────►│   Bot Server    │
-│   Users         │   API   │   (Python)      │
+│   Users         │  Webhook │   (Python)      │
 └─────────────────┘         └────────┬────────┘
                                      │
                             ┌────────▼────────┐
@@ -427,54 +437,36 @@ Hougang, Sengkang, Punggol, Serangoon, Kovan, Potong Pasir, Bartley, Buangkok, R
 
 | Component | Technology |
 |-----------|------------|
-| Bot Framework | python-telegram-bot 21+ |
+| Bot Framework | python-telegram-bot 21+ (async) |
 | Language | Python 3.10+ |
 | Config | python-dotenv |
-| Storage | In-memory (MVP) → PostgreSQL (future) |
+| Database (dev) | SQLite via aiosqlite |
+| Database (prod) | PostgreSQL via asyncpg (connection pooling) |
 | Hosting | Local / Railway / Render / VPS |
 
-### Data Structures
+### Database Schema
 
-```python
-# User subscriptions
-user_subscriptions = {
-    telegram_id: set(zone_names)
-}
+Data is stored in 4 tables with 4 indexes. Tables are created automatically on startup via `bot/database.py`.
 
-# Sightings
-recent_sightings = [
-    {
-        'id': str,              # Unique ID
-        'zone': str,            # Zone name
-        'description': str,     # Optional location details
-        'time': datetime,       # When reported
-        'reporter_id': int,     # Telegram user ID
-        'reporter_name': str,   # Username/name
-        'reporter_badge': str,  # Badge at time of report
-        'lat': float,           # GPS latitude (optional)
-        'lng': float,           # GPS longitude (optional)
-        'feedback_positive': int,
-        'feedback_negative': int
-    }
-]
+```sql
+-- User accounts and report counts
+users (telegram_id BIGINT PK, username TEXT, report_count INT, created_at TIMESTAMP)
 
-# User stats
-user_stats = {
-    telegram_id: {
-        'report_count': int,
-        'username': str,
-        'accuracy_score': float,  # 0.0 to 1.0
-        'total_feedback': int
-    }
-}
+-- Zone subscriptions (many-to-many)
+subscriptions (telegram_id BIGINT, zone_name TEXT, created_at TIMESTAMP, PK(telegram_id, zone_name))
 
-# Feedback tracking (prevents double-voting)
-sighting_feedback = {
-    sighting_id: {
-        user_id: 'positive' | 'negative'
-    }
-}
+-- Warden sighting reports
+sightings (id TEXT PK, zone TEXT, description TEXT, reported_at TIMESTAMP,
+           reporter_id BIGINT, reporter_name TEXT, reporter_badge TEXT,
+           lat REAL, lng REAL, feedback_positive INT, feedback_negative INT)
+
+-- Feedback votes on sightings
+feedback (sighting_id TEXT, user_id BIGINT, vote TEXT, created_at TIMESTAMP, PK(sighting_id, user_id))
 ```
+
+The database driver is selected automatically based on `DATABASE_URL`:
+- No URL or `sqlite:///` prefix → SQLite (local file)
+- `postgresql://` or `postgres://` prefix → PostgreSQL (connection pool, 2–10 connections)
 
 ---
 
@@ -514,27 +506,59 @@ sighting_feedback = {
 ## Roadmap
 
 ### MVP ✅
-- [x] Zone subscriptions
-- [x] Report flow (GPS + manual)
-- [x] Alert broadcasting
-- [x] Feedback system
-- [x] Reputation system
-- [x] 80 zones
-- [x] Share functionality
-- [x] User stats
+- [x] Zone subscriptions (80 zones, 6 regions)
+- [x] Report flow (GPS + manual region→zone selection)
+- [x] Alert broadcasting with feedback buttons
+- [x] Feedback system (vote changing, self-rating prevention)
+- [x] Reputation system (4-tier badges, accuracy scoring)
+- [x] 80 zones with GPS coordinates
+- [x] Share functionality with dynamic stats
+- [x] User stats tracking
 
-### Phase 2: Persistence
-- [ ] PostgreSQL database
-- [ ] Data persistence
-- [ ] Historical analytics
+### Stability & UX ✅
+- [x] Rate limiting (3 reports/hour)
+- [x] GPS-aware duplicate detection (Haversine, 200m radius)
+- [x] Multi-zone toggle subscription
+- [x] ConversationHandler state machine (6 states, 300s timeout)
+- [x] Native GPS share button
 
-### Phase 3: Growth
+### Persistence ✅
+- [x] Dual-driver database (SQLite / PostgreSQL)
+- [x] Data persists across restarts
+- [x] Accuracy from full history (SQL aggregates)
+- [x] Scheduled cleanup (every 6 hours)
+
+### Robustness ✅
+- [x] Alert messages from structured DB data
+- [x] Blocked user cleanup
+- [x] Global error handler
+- [x] Input sanitization (HTML, control chars)
+
+### Phase 5: Bug Fixes
+- [ ] Timezone-aware datetime throughout
+- [ ] Collision-proof sighting IDs (UUID)
+- [ ] Transaction-safe feedback updates
+- [ ] Rate limit timing fix
+- [ ] Foreign key constraints with cascading deletes
+
+### Phase 6: Testing & CI
+- [ ] pytest test suite
+- [ ] GitHub Actions CI pipeline
+
+### Phase 7: Production Readiness
+- [ ] Webhook mode
+- [ ] Health check endpoint
+- [ ] Database migrations (Alembic)
+- [ ] Admin commands
+
+### Phase 8: Growth
 - [ ] Leaderboards
+- [ ] Inline mode
 - [ ] Heatmaps
-- [ ] ML predictions
-- [ ] Parking.sg integration
+- [ ] Deep linking / referral tracking
+- [ ] Multi-language (i18n)
 
-### Phase 4: Monetisation
+### Phase 9: Monetisation
 - [ ] Freemium model
 - [ ] Sponsored alerts
 - [ ] Business API
@@ -545,12 +569,18 @@ sighting_feedback = {
 
 | File | Purpose |
 |------|---------|
-| `bot/main.py` | All bot logic |
-| `config.py` | Environment config |
-| `requirements.txt` | Dependencies |
-| `.env.example` | Environment template |
-| `README.md` | Documentation |
+| `bot/main.py` | Bot logic, handlers, conversation flow (1437 lines) |
+| `bot/database.py` | Dual-driver database abstraction (443 lines) |
+| `config.py` | Environment config and bot settings |
+| `requirements.txt` | Dependencies (`python-telegram-bot`, `python-dotenv`, `aiosqlite`, `asyncpg`) |
+| `.env.example` | Environment variable template |
+| `Procfile` | Heroku-style process declaration |
+| `railway.toml` | Railway.app deployment config |
+| `runtime.txt` | Python version specification |
+| `README.md` | User-facing documentation |
+| `IMPROVEMENTS.md` | Code review and improvement plan |
+| `parking_warden_bot_spec.md` | This file (product specification) |
 
 ---
 
-*Last updated: February 2025*
+*Last updated: February 2026*
