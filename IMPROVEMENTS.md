@@ -8,9 +8,9 @@
 
 ---
 
-## Status: Phases 1–4 Complete
+## Status: Phases 1–5 Complete
 
-Phases 1 through 4 addressed all critical bugs, UX issues, data persistence, and robustness gaps from the original MVP. All items below are checked off and verified in the current codebase.
+Phases 1 through 5 addressed all critical bugs, UX issues, data persistence, robustness gaps, and known code defects. All items below are checked off and verified in the current codebase.
 
 ### Phase 1: Critical Fixes (Code-Doc Alignment & Stability) ✅
 
@@ -55,40 +55,29 @@ Phases 1 through 4 addressed all critical bugs, UX issues, data persistence, and
 2. **ConversationHandler** — Proper 6-state machine with timeout, fallbacks, and `/cancel` support
 3. **Database layer** — Clean dual-driver abstraction with WAL mode, connection pooling, parameterized queries
 4. **GPS-aware duplicate detection** — Haversine + 200m radius, zone-level fallback
-5. **Feedback system** — Vote changing, self-rating prevention, window expiry, atomic count updates
+5. **Feedback system** — Transaction-safe, vote changing, self-rating prevention, window expiry
 6. **Alert message architecture** — `build_alert_message()` as single source of truth
 7. **Blocked user cleanup** — Catches `Forbidden`, removes stale subscriptions
 8. **Config externalization** — All tunable values in `config.py` with env var overrides
-
-### Known Issues (To Fix)
-
-1. **`datetime.now()` without timezone** — Used in `main.py` lines 653, 854, 968, etc. Server timezone assumed. Should use `datetime.now(timezone.utc)` for correctness on UTC-based hosts (Railway, Render).
-2. **Sighting ID collisions** — `generate_sighting_id()` uses `time.time()_random(1000-9999)` — only ~9000 unique IDs per second. Concurrent reports can collide, causing INSERT failures.
-3. **Race condition in feedback** — `handle_feedback()` does read→update→write without transaction wrapping. Two simultaneous votes on the same sighting can produce incorrect counts.
-4. **Rate limit timing bug** — `main.py:660` uses `.seconds` instead of `.total_seconds()` on timedelta. Can give wrong wait-time values.
-5. **PostgreSQL cleanup fragile** — `database.py:385` parses raw `"DELETE 42"` string from `conn.execute()` result. Brittle if format changes.
-6. **No foreign keys** — `feedback.sighting_id` has no FK constraint to `sightings.id`. Orphan feedback possible on direct deletion.
-7. **Accuracy shows 100% with 0 feedback** — `calculate_accuracy()` returns `(1.0, 0)` for new users. Confirmation message shows "100% (0 ratings)" which is misleading.
-8. **ZONE_COORDS inside function** — ~90 lines of constants defined inside `handle_location()` at line 1180. Should be module-level.
-9. **`sys.path` hack** — `main.py:6` uses `sys.path.insert(0, ...)` instead of proper packaging.
-10. **Share message with 0 users** — `/share` says "Join 0+ drivers" on fresh deployments.
+9. **Timezone-safe datetime** — All `datetime.now(timezone.utc)` throughout codebase
+10. **Proper Python packaging** — Runs as `python -m bot.main`, relative imports, no sys.path hacks
 
 ---
 
-## Phase 5: Bug Fixes
+### Phase 5: Bug Fixes ✅
 
-Fix the known issues listed above.
+All 10 known issues from the Phase 1–4 review have been fixed.
 
-- [ ] **5.1** Use `datetime.now(timezone.utc)` everywhere — replace all bare `datetime.now()` calls in `main.py` and `database.py`
-- [ ] **5.2** Replace sighting ID generation with `uuid4()` to eliminate collisions
-- [ ] **5.3** Wrap feedback read→update→write in a single transaction (add `_transaction()` helper to `Database`)
-- [ ] **5.4** Fix rate limit wait calculation — use `.total_seconds()` instead of `.seconds`
-- [ ] **5.5** Fix PostgreSQL cleanup — use `asyncpg`'s `execute()` return value properly instead of string parsing
-- [ ] **5.6** Add foreign key constraints (`feedback.sighting_id → sightings.id` with `ON DELETE CASCADE`)
-- [ ] **5.7** Show "No ratings yet" instead of "100% (0 ratings)" for users with zero feedback
-- [ ] **5.8** Move `ZONE_COORDS` to module level (alongside `ZONES`)
-- [ ] **5.9** Fix `sys.path` hack — convert to proper Python package with `__init__.py` imports or relative imports
-- [ ] **5.10** Show "Join drivers" (no count) when subscriber count is below a threshold (e.g., < 10)
+- [x] **5.1** Use `datetime.now(timezone.utc)` everywhere — all bare `datetime.now()` calls replaced in `main.py` and `database.py`
+- [x] **5.2** Replace sighting ID generation with `uuid4()` — collision-proof, removed `time`/`random` imports
+- [x] **5.3** Transaction-safe feedback — new `Database.apply_feedback()` method wraps read→upsert→update in a single transaction (SQLite commit block / PostgreSQL `conn.transaction()`)
+- [x] **5.4** Fix rate limit wait calculation — `.total_seconds()` with `max(1, ...)` guard
+- [x] **5.5** Fix PostgreSQL cleanup — wrapped in transaction, added `try/except` for string parsing
+- [x] **5.6** Add foreign key constraint — `feedback.sighting_id REFERENCES sightings(id) ON DELETE CASCADE`
+- [x] **5.7** Show "No ratings yet" for zero feedback — `calculate_accuracy()` returns `(0.0, 0)`, confirm message branches on `total_feedback > 0`
+- [x] **5.8** Move `ZONE_COORDS` to module level — 80 zone coordinates defined alongside `ZONES` dict
+- [x] **5.9** Fix `sys.path` hack — relative import (`from .database import ...`), run via `python -m bot.main`, Procfile/railway.toml updated
+- [x] **5.10** Show "Join drivers" when subscriber count < 10 — no misleading "0+" on fresh deployments
 
 ### Phase 6: Testing & CI
 
@@ -131,8 +120,8 @@ Harden for real-world scale.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `bot/main.py` | 1437 | All bot logic (handlers, routing, conversation flow) |
-| `bot/database.py` | 443 | Dual-driver database abstraction (SQLite/PostgreSQL) |
+| `bot/main.py` | ~1425 | All bot logic (handlers, routing, conversation flow) |
+| `bot/database.py` | ~550 | Dual-driver database abstraction (SQLite/PostgreSQL) |
 | `config.py` | 18 | Environment config and bot settings |
 | `requirements.txt` | 4 | `python-telegram-bot`, `python-dotenv`, `aiosqlite`, `asyncpg` |
 | `.env.example` | 6 | Template for environment variables |

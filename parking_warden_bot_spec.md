@@ -460,8 +460,9 @@ sightings (id TEXT PK, zone TEXT, description TEXT, reported_at TIMESTAMP,
            reporter_id BIGINT, reporter_name TEXT, reporter_badge TEXT,
            lat REAL, lng REAL, feedback_positive INT, feedback_negative INT)
 
--- Feedback votes on sightings
-feedback (sighting_id TEXT, user_id BIGINT, vote TEXT, created_at TIMESTAMP, PK(sighting_id, user_id))
+-- Feedback votes on sightings (FK cascades on sighting deletion)
+feedback (sighting_id TEXT REFERENCES sightings(id) ON DELETE CASCADE,
+         user_id BIGINT, vote TEXT, created_at TIMESTAMP, PK(sighting_id, user_id))
 ```
 
 The database driver is selected automatically based on `DATABASE_URL`:
@@ -534,12 +535,14 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] Global error handler
 - [x] Input sanitization (HTML, control chars)
 
-### Phase 5: Bug Fixes
-- [ ] Timezone-aware datetime throughout
-- [ ] Collision-proof sighting IDs (UUID)
-- [ ] Transaction-safe feedback updates
-- [ ] Rate limit timing fix
-- [ ] Foreign key constraints with cascading deletes
+### Bug Fixes (Phase 5) ✅
+- [x] Timezone-aware datetime throughout
+- [x] Collision-proof sighting IDs (UUID4)
+- [x] Transaction-safe feedback updates
+- [x] Rate limit timing fix
+- [x] Foreign key constraints with cascading deletes
+- [x] Proper Python packaging (relative imports)
+- [x] Accuracy display fix, module-level ZONE_COORDS, share threshold
 
 ### Phase 6: Testing & CI
 - [ ] pytest test suite
@@ -569,8 +572,8 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 | File | Purpose |
 |------|---------|
-| `bot/main.py` | Bot logic, handlers, conversation flow (1437 lines) |
-| `bot/database.py` | Dual-driver database abstraction (443 lines) |
+| `bot/main.py` | Bot logic, handlers, conversation flow (~1425 lines) |
+| `bot/database.py` | Dual-driver database abstraction (~550 lines) |
 | `config.py` | Environment config and bot settings |
 | `requirements.txt` | Dependencies (`python-telegram-bot`, `python-dotenv`, `aiosqlite`, `asyncpg`) |
 | `.env.example` | Environment variable template |

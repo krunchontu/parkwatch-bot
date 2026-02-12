@@ -74,7 +74,7 @@ cp .env.example .env
 # TELEGRAM_BOT_TOKEN=your_token_here
 
 # 5. Run the bot
-python bot/main.py
+python -m bot.main
 ```
 
 You should see:
@@ -271,8 +271,8 @@ Badge Progression:
 parkwatch-bot/
 ├── bot/
 │   ├── __init__.py          # Package marker
-│   ├── main.py              # Bot logic, handlers, conversation flow (1437 lines)
-│   └── database.py          # Dual-driver DB abstraction (443 lines)
+│   ├── main.py              # Bot logic, handlers, conversation flow (~1425 lines)
+│   └── database.py          # Dual-driver DB abstraction (~550 lines)
 ├── config.py                # Environment configuration & bot settings
 ├── requirements.txt         # Python dependencies
 ├── .env.example             # Environment variable template
@@ -321,8 +321,9 @@ sightings (id TEXT PK, zone TEXT, description TEXT, reported_at TIMESTAMP,
            reporter_id BIGINT, reporter_name TEXT, reporter_badge TEXT,
            lat REAL, lng REAL, feedback_positive INT, feedback_negative INT)
 
--- Feedback votes on sightings
-feedback (sighting_id TEXT, user_id BIGINT, vote TEXT, created_at TIMESTAMP, PK(sighting_id, user_id))
+-- Feedback votes on sightings (FK cascades on sighting deletion)
+feedback (sighting_id TEXT REFERENCES sightings(id) ON DELETE CASCADE,
+         user_id BIGINT, vote TEXT, created_at TIMESTAMP, PK(sighting_id, user_id))
 
 -- Indexes
 idx_sightings_zone_time ON sightings(zone, reported_at)
@@ -340,7 +341,7 @@ idx_feedback_sighting ON feedback(sighting_id)
 ### Local Development
 
 ```bash
-python bot/main.py
+python -m bot.main
 ```
 
 Bot runs in foreground. Press Ctrl+C to stop.
@@ -364,7 +365,7 @@ Bot runs in foreground. Press Ctrl+C to stop.
 4. Create new **Background Worker** (not Web Service)
 5. Connect your GitHub repo
 6. Set build command: `pip install -r requirements.txt`
-7. Set start command: `python bot/main.py`
+7. Set start command: `python -m bot.main`
 8. Add environment variables: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL` (from step 3)
 
 #### Option 3: DigitalOcean / VPS
@@ -385,7 +386,7 @@ echo "TELEGRAM_BOT_TOKEN=your_token_here" > .env
 
 # Option A: Run with screen (keeps running after disconnect)
 screen -S parkwatch
-python bot/main.py
+python -m bot.main
 # Press Ctrl+A, then D to detach
 
 # Option B: Run with systemd (auto-restart on crash)
@@ -403,7 +404,7 @@ After=network.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/parkwatch-bot
-ExecStart=/usr/bin/python3 bot/main.py
+ExecStart=/usr/bin/python3 -m bot.main
 Restart=always
 RestartSec=10
 Environment=TELEGRAM_BOT_TOKEN=your_token_here
@@ -454,12 +455,16 @@ sudo systemctl status parkwatch
 - [x] Global error handler with user notification
 - [x] Broadcast failure reporting to reporter
 
-### Next: Bug Fixes (Phase 5)
-- [ ] Timezone-aware datetime throughout
-- [ ] Collision-proof sighting IDs (UUID)
-- [ ] Transaction-safe feedback updates
-- [ ] Rate limit timing fix
-- [ ] Foreign key constraints with cascading deletes
+### Bug Fixes (Phase 5) ✅
+- [x] Timezone-aware datetime throughout (`datetime.now(timezone.utc)`)
+- [x] Collision-proof sighting IDs (UUID4)
+- [x] Transaction-safe feedback updates (`Database.apply_feedback()`)
+- [x] Rate limit timing fix (`.total_seconds()`)
+- [x] Foreign key constraints with cascading deletes
+- [x] Proper Python packaging (relative imports, `python -m bot.main`)
+- [x] Accuracy display fix ("No ratings yet" for zero feedback)
+- [x] Module-level ZONE_COORDS
+- [x] Share message threshold (no "0+" on fresh installs)
 
 ### Next: Testing & CI (Phase 6)
 - [ ] pytest + pytest-asyncio test suite
@@ -494,14 +499,14 @@ sudo systemctl status parkwatch
 
 1. Check that `TELEGRAM_BOT_TOKEN` is set correctly in `.env`
 2. Ensure the `.env` file is in the `parkwatch-bot/` directory
-3. Verify bot is running: you should see "🚗 ParkWatch SG Bot starting..."
+3. Verify bot is running: you should see "ParkWatch SG Bot starting..."
 
 ### Module not found error
 
 ```bash
 # Make sure you're in the right directory
 cd parkwatch-bot
-python bot/main.py
+python -m bot.main
 ```
 
 ### asyncpg build error on Windows
