@@ -15,7 +15,7 @@
 | # | Feature | Where Documented | Code Status |
 |---|---------|-----------------|-------------|
 | 1 | Rate limiting (3 reports/hour) | Spec (Spam Prevention), `config.py:10` | `MAX_REPORTS_PER_HOUR` defined but never enforced in `main.py` |
-| 2 | Duplicate detection (same zone within 5 mins) | Spec (Spam Prevention) | Not implemented |
+| 2 | Duplicate detection (same zone within 5 mins) | Spec (Spam Prevention) | Implemented with GPS-aware 200m radius |
 | 3 | Self-rating prevention | Spec (Feedback Rules) | No server-side check in `handle_feedback()`. Broadcast excludes reporter (`main.py:538`) but no guard in the handler itself |
 | 4 | Sighting expiry from config | `config.py:9` | Code hardcodes `timedelta(minutes=30)` at `main.py:695` instead of using `SIGHTING_EXPIRY_MINUTES` |
 
@@ -73,7 +73,7 @@ Make the code match what the documentation already promises.
 - [x] **1.1** Move top-level imports (`datetime`, `time`, `random`, `math`) to module top
 - [x] **1.2** Use `config.SIGHTING_EXPIRY_MINUTES` instead of hardcoded 30
 - [x] **1.3** Implement rate limiting (3 reports/user/hour) using `MAX_REPORTS_PER_HOUR`
-- [x] **1.4** Implement duplicate detection (same zone within 5 mins)
+- [x] **1.4** Implement duplicate detection (same zone within 5 mins, GPS-aware with 200m radius)
 - [x] **1.5** Add server-side self-rating prevention in `handle_feedback()`
 - [x] **1.6** Guard `handle_location` so it only triggers during active report flow
 
@@ -101,7 +101,7 @@ Move from in-memory to durable storage.
 Harden the bot for real-world usage.
 
 - [x] **4.1** Replace string-based message editing with stored sighting data for feedback updates
-- [x] **4.2** Use Haversine formula for GPS distance calculation
+- [x] **4.2** Use Haversine formula for GPS distance calculation (also used for duplicate detection radius)
 - [x] **4.3** Add input sanitization for descriptions
 - [x] **4.4** Handle broadcast failures — notify reporter, auto-cleanup blocked users
 - [x] **4.5** Clean up stale feedback buttons on expired sightings (24h feedback window)

@@ -40,6 +40,11 @@ Crowdsourced parking warden alerts for Singapore drivers. Get notified when ward
 - Track your stats with `/mystats`
 - Accuracy ratings build your reputation
 
+### 🛡️ Smart Duplicate Detection
+- GPS-aware: reports within 200m in the same zone are grouped as duplicates
+- Multiple wardens in the same zone are allowed when GPS shows they're far apart
+- Falls back to zone-level detection when GPS is unavailable
+
 ### 📤 Easy Sharing
 - Built-in `/share` command generates invite message
 - Designed for viral growth through driver communities
@@ -116,8 +121,9 @@ You should see:
 1. Spot a warden → Use `/report`
 2. **Share location** (GPS) or **select zone manually**
 3. **Add description** (e.g., "outside Maxwell Food Centre")
-4. **Confirm** — alert broadcasts to all zone subscribers
-5. **Earn reputation** as your reports get positive feedback
+4. **Confirm** — duplicate check runs (GPS-aware: within 200m = duplicate, further apart = allowed)
+5. **Alert broadcasts** to all zone subscribers
+6. **Earn reputation** as your reports get positive feedback
 
 ### Alert Message Format
 
@@ -280,6 +286,17 @@ parkwatch-bot/
 |----------|-------------|----------|
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | Yes |
 | `DATABASE_URL` | PostgreSQL connection string | No (future) |
+
+### Bot Settings (`config.py`)
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `SIGHTING_EXPIRY_MINUTES` | 30 | How long sightings remain active |
+| `MAX_REPORTS_PER_HOUR` | 3 | Rate limit per user |
+| `DUPLICATE_WINDOW_MINUTES` | 5 | Time window for duplicate detection |
+| `DUPLICATE_RADIUS_METERS` | 200 | GPS radius for duplicate detection (Haversine) |
+| `SIGHTING_RETENTION_DAYS` | 30 | Days to retain sighting data |
+| `FEEDBACK_WINDOW_HOURS` | 24 | Hours feedback buttons remain active |
 
 ### Data Structures (In-Memory)
 

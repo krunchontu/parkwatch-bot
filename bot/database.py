@@ -300,12 +300,12 @@ class Database:
             params = (*zone_list, cutoff)
         return await self._fetchall(sql, params)
 
-    async def find_duplicate_sighting(self, zone: str, window_minutes: int) -> Optional[dict]:
-        """Find a sighting in the same zone within the duplicate window."""
+    async def find_recent_zone_sightings(self, zone: str, window_minutes: int) -> list[dict]:
+        """Find all sightings in the same zone within the duplicate window."""
         cutoff = datetime.now() - timedelta(minutes=window_minutes)
-        return await self._fetchone(
+        return await self._fetchall(
             f"SELECT * FROM sightings WHERE zone = {self._ph(1)} AND reported_at > {self._ph(2)} "
-            f"ORDER BY reported_at DESC LIMIT 1",
+            f"ORDER BY reported_at DESC",
             (zone, cutoff)
         )
 
