@@ -472,21 +472,43 @@ sudo systemctl status parkwatch
 - [ ] Database integration tests
 - [ ] GitHub Actions CI pipeline (lint, type check, test)
 
-### Future: Production Readiness (Phase 7)
+### Future: Production Infrastructure (Phase 7)
 - [ ] Webhook mode for production
 - [ ] Health check endpoint
+- [ ] Structured logging (JSON)
 - [ ] Database migrations (Alembic)
-- [ ] Admin commands
 - [ ] Error tracking (Sentry)
 
-### Future: Growth Features (Phase 8)
+### Future: Admin — Foundation & Visibility (Phase 8)
+- [ ] Admin authentication (`ADMIN_USER_IDS` env var, `admin_only` decorator)
+- [ ] `/admin` help command
+- [ ] `/admin stats` — global statistics dashboard
+- [ ] `/admin user <id>` / `/admin zone <name>` — lookup commands
+- [ ] Audit logging (`admin_actions` table, `/admin log`)
+
+### Future: Admin — User Management & Moderation (Phase 9)
+- [ ] `/admin ban`, `/admin unban`, `/admin banlist`
+- [ ] Ban enforcement middleware
+- [ ] `/admin delete <sighting_id>` — remove false/spam sightings
+- [ ] `/admin review` — moderation queue for flagged sightings
+- [ ] `/admin warn <id>` — warning system with auto-ban escalation
+
+### Future: Admin — Broadcast & Operations (Phase 10)
+- [ ] `/admin broadcast` — message all users (with confirmation + delivery report)
+- [ ] Targeted broadcast by zone or region
+- [ ] `/admin maintenance on|off` — maintenance mode
+- [ ] `/admin purge` — manual data cleanup + GDPR user deletion
+- [ ] `/admin export stats` — CSV/JSON data export
+- [ ] `/admin config` — view/adjust runtime settings without restart
+
+### Future: Growth Features (Phase 11)
 - [ ] Weekly/monthly leaderboard
 - [ ] Inline mode for cross-chat queries
 - [ ] Warden activity heatmaps by time/day
 - [ ] Deep linking for referral tracking
 - [ ] Multi-language support (i18n)
 
-### Future: Monetisation (Phase 9)
+### Future: Monetisation (Phase 12)
 - [ ] Freemium (1 zone free, premium for all zones)
 - [ ] Sponsored alerts from parking providers
 - [ ] Business API for fleet managers
