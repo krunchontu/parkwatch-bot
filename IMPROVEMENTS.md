@@ -89,30 +89,266 @@ Add test coverage and automated quality checks.
 - [ ] **6.4** Add GitHub Actions CI pipeline: lint (ruff), type check (mypy), test (pytest)
 - [ ] **6.5** Add `pyproject.toml` or `setup.py` for proper packaging
 
-### Phase 7: Production Readiness
+### Phase 7: Production Infrastructure
 
-Harden for real-world scale.
+Harden deployment, observability, and schema management for real-world scale. Separated from admin functionality (Phase 8–10) which is a distinct feature domain.
 
 - [ ] **7.1** Webhook mode support (alongside polling) for production deployments
-- [ ] **7.2** Health check endpoint (lightweight HTTP server for deployment monitoring)
+- [ ] **7.2** Health check endpoint (lightweight HTTP server for deployment platform monitoring)
 - [ ] **7.3** Structured logging (JSON format) for log aggregation services
 - [ ] **7.4** Database migrations with Alembic (versioned schema changes)
-- [ ] **7.5** Admin commands (`/admin stats`, `/admin broadcast`, `/admin ban`)
-- [ ] **7.6** Sentry or equivalent error tracking integration
+- [ ] **7.5** Sentry or equivalent error tracking integration
 
-### Phase 8: Growth Features
+---
 
-- [ ] **8.1** Weekly/monthly leaderboard (top reporters by report count and accuracy)
-- [ ] **8.2** Inline mode — query `@parkwatch_bot Orchard` from any chat to check sightings
-- [ ] **8.3** Warden activity heatmaps by time/day
-- [ ] **8.4** Deep linking for referral tracking (`/start ref_<user_id>`)
-- [ ] **8.5** Multi-language support (i18n) — start with English + Chinese
+### Phase 8: Admin — Foundation & Visibility
 
-### Phase 9: Monetisation
+Establish the admin authentication layer, provide global visibility into bot activity, and create the audit infrastructure that all subsequent admin features depend on.
 
-- [ ] **9.1** Freemium model (1 zone free, premium for unlimited)
-- [ ] **9.2** Sponsored alerts from parking providers
-- [ ] **9.3** Business API for fleet managers
+**Why this phase exists:** The bot currently has zero admin functionality. A crowdsourced reporting platform needs operator visibility and control before scaling. Every subsequent admin phase builds on the auth layer and audit table introduced here.
+
+#### 8.1 Admin Authentication & Authorization
+
+- [ ] **8.1.1** `ADMIN_USER_IDS` environment variable — comma-separated list of Telegram user IDs authorized as admins
+- [ ] **8.1.2** `admin_only` decorator — wraps admin command handlers; rejects unauthorized users with a generic "Unknown command" response (avoids revealing admin commands exist)
+- [ ] **8.1.3** Add `ADMIN_USER_IDS` to `.env.example` and document in README
+
+#### 8.2 Admin Help
+
+- [ ] **8.2.1** `/admin` command — lists all available admin commands with descriptions (only shown to authenticated admins)
+- [ ] **8.2.2** `/admin help <command>` — detailed usage for a specific admin command
+
+#### 8.3 Global Statistics Dashboard
+
+- [ ] **8.3.1** `/admin stats` — display key metrics in a single message:
+  - Total registered users (all-time)
+  - Active users (reported or gave feedback in last 7 days)
+  - Total sightings (all-time and last 24 hours)
+  - Active subscriptions and unique subscribers
+  - Top 5 most-subscribed zones
+  - Top 5 most-reported zones (last 7 days)
+  - Feedback totals (positive vs negative, overall accuracy rate)
+- [ ] **8.3.2** Database methods: `get_global_stats()`, `get_top_zones_by_subscribers()`, `get_top_zones_by_sightings()`, `get_active_user_count()`
+
+#### 8.4 User & Zone Lookup
+
+- [ ] **8.4.1** `/admin user <telegram_id or @username>` — look up a specific user:
+  - Registration date, report count, badge, accuracy score
+  - Subscribed zones
+  - Recent sightings (last 10)
+  - Feedback received (positive/negative totals)
+  - Ban status (once Phase 9 is implemented)
+- [ ] **8.4.2** `/admin zone <zone_name>` — look up a specific zone:
+  - Subscriber count
+  - Sighting count (last 24h / 7d / all-time)
+  - Top reporters in this zone
+  - Most recent sightings
+- [ ] **8.4.3** Database methods: `get_user_details()`, `get_zone_details()`, `get_user_recent_sightings()`, `get_zone_top_reporters()`
+
+#### 8.5 Audit Logging
+
+- [ ] **8.5.1** `admin_actions` table — schema:
+  ```sql
+  admin_actions (
+    id INTEGER PK AUTOINCREMENT,
+    admin_id BIGINT NOT NULL,
+    action TEXT NOT NULL,        -- e.g. 'ban', 'unban', 'delete_sighting', 'broadcast'
+    target TEXT,                 -- e.g. user ID, sighting ID, zone name
+    detail TEXT,                 -- free-form context (reason, message preview, etc.)
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+  ```
+- [ ] **8.5.2** `log_admin_action()` database method — called by every admin write operation
+- [ ] **8.5.3** `/admin log [count]` — view the most recent N admin actions (default 20)
+
+---
+
+### Phase 9: Admin — User Management & Content Moderation
+
+Give admins the ability to remove bad actors and false content. Critical for platform trust as the user base grows.
+
+**Why this phase exists:** A crowdsourced platform where any user can broadcast alerts to others is inherently vulnerable to abuse. Without ban and moderation tools, a single spammer can degrade the experience for all subscribers in a zone.
+
+#### 9.1 User Banning
+
+- [ ] **9.1.1** `banned_users` table — schema:
+  ```sql
+  banned_users (
+    telegram_id BIGINT PK,
+    banned_by BIGINT NOT NULL,
+    reason TEXT,
+    banned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+  ```
+- [ ] **9.1.2** `/admin ban <user_id> [reason]` — ban a user:
+  - Insert into `banned_users`
+  - Clear all subscriptions for the user (stop them receiving alerts)
+  - Log action to `admin_actions`
+  - Notify the banned user: "Your account has been restricted. Contact @admin_username for appeals."
+- [ ] **9.1.3** `/admin unban <user_id>` — remove ban, log action, notify user
+- [ ] **9.1.4** `/admin banlist` — list all currently banned users with ban date and reason
+- [ ] **9.1.5** Ban enforcement middleware — check `banned_users` table on every command handler:
+  - Banned users cannot: `/report`, `/subscribe`, `/recent`, `/mystats`, `/share`
+  - Banned users receive a single static message when attempting any action
+  - Do NOT check on `/start` (allow re-onboarding after unban)
+- [ ] **9.1.6** Database methods: `ban_user()`, `unban_user()`, `is_banned()`, `get_banned_users()`
+
+#### 9.2 Sighting Moderation
+
+- [ ] **9.2.1** `/admin delete <sighting_id>` — remove a specific sighting:
+  - Delete sighting and cascaded feedback (FK already handles this)
+  - Log action to `admin_actions` with sighting details for the record
+  - Confirmation step: show sighting details, require `/admin delete <id> confirm`
+- [ ] **9.2.2** `/admin review` — show a moderation queue of flagged sightings:
+  - Sightings where `feedback_negative > feedback_positive` and total feedback >= 3
+  - Sightings from users with accuracy < 50% and total feedback >= 5
+  - Display: sighting details, reporter info, feedback ratio, action buttons
+- [ ] **9.2.3** Auto-flag logic — mark sightings for review when:
+  - Negative feedback ratio exceeds 70% (with at least 3 votes)
+  - Reporter accuracy drops below 40% (with at least 5 total feedback across all reports)
+  - `flagged` boolean column added to `sightings` table
+- [ ] **9.2.4** Database methods: `delete_sighting()`, `get_flagged_sightings()`, `flag_sighting()`, `get_low_accuracy_reporters()`
+
+#### 9.3 Reporter Warnings
+
+- [ ] **9.3.1** `/admin warn <user_id> [message]` — send a warning to a user:
+  - Bot messages the user with the warning text
+  - Log to `admin_actions`
+  - Track warning count per user (new `warnings` column in `users` table)
+- [ ] **9.3.2** Auto-warn threshold — automatically send a system warning when:
+  - User's accuracy drops below 50% after 5+ feedback ratings
+  - User has been rate-limited 3+ times in a single day
+- [ ] **9.3.3** Escalation path: 3 warnings → auto-ban (configurable via `MAX_WARNINGS` env var, default 3)
+
+---
+
+### Phase 10: Admin — Broadcast & Operations
+
+Operational tools for communicating with users, managing system state, and performing maintenance tasks.
+
+**Why this phase exists:** Admins need to communicate service changes, perform maintenance, and extract data. These operations are lower priority than visibility (Phase 8) and moderation (Phase 9) but essential for sustained production operation.
+
+#### 10.1 Broadcast Messaging
+
+- [ ] **10.1.1** `/admin broadcast <message>` — send a message to all registered users:
+  - Confirmation step: show message preview + recipient count, require explicit confirm
+  - Rate-limited delivery (20 messages/second to respect Telegram API limits)
+  - Delivery report: sent count, failed count, blocked users cleaned up
+  - Log to `admin_actions` with message preview and delivery stats
+- [ ] **10.1.2** `/admin broadcast zone:<zone_name> <message>` — targeted broadcast to subscribers of a specific zone
+- [ ] **10.1.3** `/admin broadcast region:<region_name> <message>` — targeted broadcast to subscribers of all zones in a region
+- [ ] **10.1.4** Database methods: `get_all_user_ids()`, `get_region_subscribers()`
+
+#### 10.2 Maintenance Mode
+
+- [ ] **10.2.1** `/admin maintenance on [message]` — enable maintenance mode:
+  - All user commands return a "Bot is under maintenance" message (with optional custom text)
+  - Admin commands continue to work normally
+  - Scheduled jobs (cleanup) are paused
+  - Log to `admin_actions`
+- [ ] **10.2.2** `/admin maintenance off` — disable maintenance mode, resume normal operation
+- [ ] **10.2.3** `MAINTENANCE_MODE` runtime flag (in-memory, resets on restart — or persisted in DB for durability)
+
+#### 10.3 Data Management
+
+- [ ] **10.3.1** `/admin purge sightings [days]` — manually trigger cleanup of sightings older than N days (default: `SIGHTING_RETENTION_DAYS`):
+  - Confirmation step showing count of records to be deleted
+  - Log to `admin_actions`
+- [ ] **10.3.2** `/admin purge user <user_id>` — delete all data for a specific user (sightings, feedback, subscriptions, user record):
+  - GDPR/privacy compliance for user data deletion requests
+  - Confirmation step required
+  - Log to `admin_actions`
+- [ ] **10.3.3** `/admin export stats` — generate and send a CSV/JSON summary:
+  - User counts, zone subscription counts, sighting counts by zone, feedback summary
+  - Sent as a Telegram document attachment
+
+#### 10.4 Runtime Configuration
+
+- [ ] **10.4.1** `/admin config` — display current runtime settings:
+  - `MAX_REPORTS_PER_HOUR`, `DUPLICATE_WINDOW_MINUTES`, `DUPLICATE_RADIUS_METERS`
+  - `SIGHTING_EXPIRY_MINUTES`, `SIGHTING_RETENTION_DAYS`, `FEEDBACK_WINDOW_HOURS`
+  - `MAX_WARNINGS` (from Phase 9.3)
+  - Maintenance mode status
+- [ ] **10.4.2** `/admin config <key> <value>` — adjust a runtime setting without restart:
+  - Store overrides in `config_overrides` table (persisted across restarts)
+  - Validate value ranges (e.g., `MAX_REPORTS_PER_HOUR` must be 1–100)
+  - Log change to `admin_actions`
+- [ ] **10.4.3** `/admin config reset <key>` — revert a setting to its default (delete override)
+- [ ] **10.4.4** `config_overrides` table — schema:
+  ```sql
+  config_overrides (
+    key TEXT PK,
+    value TEXT NOT NULL,
+    updated_by BIGINT NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+  ```
+
+---
+
+### Phase 11: Growth Features
+
+User-facing features to drive engagement and organic growth.
+
+- [ ] **11.1** Weekly/monthly leaderboard (top reporters by report count and accuracy)
+- [ ] **11.2** Inline mode — query `@parkwatch_bot Orchard` from any chat to check sightings
+- [ ] **11.3** Warden activity heatmaps by time/day
+- [ ] **11.4** Deep linking for referral tracking (`/start ref_<user_id>`)
+- [ ] **11.5** Multi-language support (i18n) — start with English + Chinese
+
+### Phase 12: Monetisation
+
+- [ ] **12.1** Freemium model (1 zone free, premium for unlimited)
+- [ ] **12.2** Sponsored alerts from parking providers
+- [ ] **12.3** Business API for fleet managers
+
+---
+
+## Admin Command Reference (Phases 8–10)
+
+Quick reference for all admin commands once fully implemented.
+
+| Command | Phase | Description |
+|---------|-------|-------------|
+| `/admin` | 8.2 | List all admin commands |
+| `/admin help <cmd>` | 8.2 | Detailed usage for a command |
+| `/admin stats` | 8.3 | Global statistics dashboard |
+| `/admin user <id>` | 8.4 | Look up user details and activity |
+| `/admin zone <name>` | 8.4 | Look up zone activity and stats |
+| `/admin log [count]` | 8.5 | View recent admin actions |
+| `/admin ban <id> [reason]` | 9.1 | Ban a user |
+| `/admin unban <id>` | 9.1 | Unban a user |
+| `/admin banlist` | 9.1 | List all banned users |
+| `/admin delete <sighting_id>` | 9.2 | Delete a sighting |
+| `/admin review` | 9.2 | View flagged sightings queue |
+| `/admin warn <id> [msg]` | 9.3 | Warn a user |
+| `/admin broadcast <msg>` | 10.1 | Broadcast to all users |
+| `/admin broadcast zone:<z> <msg>` | 10.1 | Broadcast to zone subscribers |
+| `/admin broadcast region:<r> <msg>` | 10.1 | Broadcast to region subscribers |
+| `/admin maintenance on\|off` | 10.2 | Toggle maintenance mode |
+| `/admin purge sightings [days]` | 10.3 | Clean up old sightings |
+| `/admin purge user <id>` | 10.3 | Delete all user data (GDPR) |
+| `/admin export stats` | 10.3 | Export stats as CSV/JSON |
+| `/admin config` | 10.4 | View runtime settings |
+| `/admin config <key> <val>` | 10.4 | Adjust a setting at runtime |
+| `/admin config reset <key>` | 10.4 | Reset setting to default |
+
+## Database Changes Required (Phases 8–10)
+
+| Change | Phase | Description |
+|--------|-------|-------------|
+| New table: `admin_actions` | 8.5 | Audit log for all admin operations |
+| New table: `banned_users` | 9.1 | Banned user records with reason |
+| New column: `sightings.flagged` | 9.2 | Boolean flag for moderation queue |
+| New column: `users.warnings` | 9.3 | Warning count per user |
+| New table: `config_overrides` | 10.4 | Runtime configuration overrides |
+
+## Environment Variables Added (Phases 8–10)
+
+| Variable | Phase | Description | Default |
+|----------|-------|-------------|---------|
+| `ADMIN_USER_IDS` | 8.1 | Comma-separated admin Telegram IDs | (required) |
+| `MAX_WARNINGS` | 9.3 | Warnings before auto-ban | 3 |
 
 ---
 
@@ -125,8 +361,8 @@ Harden for real-world scale.
 | `config.py` | 18 | Environment config and bot settings |
 | `requirements.txt` | 4 | `python-telegram-bot`, `python-dotenv`, `aiosqlite`, `asyncpg` |
 | `.env.example` | 6 | Template for environment variables |
-| `parking_warden_bot_spec.md` | ~560 | Full product specification with user flows |
-| `README.md` | ~520 | User-facing documentation |
+| `parking_warden_bot_spec.md` | ~590 | Full product specification with user flows |
+| `README.md` | ~550 | User-facing documentation |
 | `IMPROVEMENTS.md` | — | This file (code review & improvement plan) |
 | `Procfile` | 1 | Heroku-style process declaration |
 | `railway.toml` | 9 | Railway.app deployment config |
@@ -134,4 +370,4 @@ Harden for real-world scale.
 
 ---
 
-*Last updated: 2026-02-12*
+*Last updated: 2026-02-13*

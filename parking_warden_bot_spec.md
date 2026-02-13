@@ -545,26 +545,53 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] Accuracy display fix, module-level ZONE_COORDS, share threshold
 
 ### Phase 6: Testing & CI
-- [ ] pytest test suite
-- [ ] GitHub Actions CI pipeline
+- [ ] pytest + pytest-asyncio test suite
+- [ ] Unit tests for core functions
+- [ ] Database integration tests
+- [ ] GitHub Actions CI pipeline (lint, type check, test)
 
-### Phase 7: Production Readiness
-- [ ] Webhook mode
+### Phase 7: Production Infrastructure
+- [ ] Webhook mode for production
 - [ ] Health check endpoint
+- [ ] Structured logging (JSON)
 - [ ] Database migrations (Alembic)
-- [ ] Admin commands
+- [ ] Error tracking (Sentry)
 
-### Phase 8: Growth
-- [ ] Leaderboards
-- [ ] Inline mode
-- [ ] Heatmaps
-- [ ] Deep linking / referral tracking
-- [ ] Multi-language (i18n)
+### Phase 8: Admin — Foundation & Visibility
+- [ ] Admin authentication (`ADMIN_USER_IDS` env var, `admin_only` decorator)
+- [ ] `/admin` help and `/admin help <command>`
+- [ ] `/admin stats` — global statistics dashboard (users, sightings, zones, feedback)
+- [ ] `/admin user <id>` — user lookup (activity, subscriptions, accuracy)
+- [ ] `/admin zone <name>` — zone lookup (subscribers, sighting volume, top reporters)
+- [ ] Audit logging (`admin_actions` table, `/admin log`)
 
-### Phase 9: Monetisation
-- [ ] Freemium model
-- [ ] Sponsored alerts
-- [ ] Business API
+### Phase 9: Admin — User Management & Moderation
+- [ ] `/admin ban <id> [reason]`, `/admin unban <id>`, `/admin banlist`
+- [ ] Ban enforcement middleware (block banned users from all commands)
+- [ ] `/admin delete <sighting_id>` — remove false/spam sightings
+- [ ] `/admin review` — moderation queue (high negative feedback, low-accuracy reporters)
+- [ ] Auto-flag logic (sightings with >70% negative feedback)
+- [ ] `/admin warn <id> [message]` — warn users, auto-ban after N warnings
+
+### Phase 10: Admin — Broadcast & Operations
+- [ ] `/admin broadcast <message>` — send to all users (with confirmation + delivery report)
+- [ ] Targeted broadcast (`zone:<name>`, `region:<name>`)
+- [ ] `/admin maintenance on|off` — maintenance mode toggle
+- [ ] `/admin purge sightings [days]` and `/admin purge user <id>` (GDPR)
+- [ ] `/admin export stats` — CSV/JSON data export
+- [ ] `/admin config [key] [value]` — view/adjust runtime settings
+
+### Phase 11: Growth Features
+- [ ] Leaderboards (weekly/monthly top reporters)
+- [ ] Inline mode (`@parkwatch_bot Orchard` from any chat)
+- [ ] Warden activity heatmaps by time/day
+- [ ] Deep linking for referral tracking
+- [ ] Multi-language support (i18n)
+
+### Phase 12: Monetisation
+- [ ] Freemium model (1 zone free, premium for all)
+- [ ] Sponsored alerts from parking providers
+- [ ] Business API for fleet managers
 
 ---
 
