@@ -83,7 +83,7 @@ python -m bot.main
 
 You should see:
 ```
-2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.1.0 starting in polling mode
+2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.2.0 starting in polling mode
 2026-XX-XX XX:XX:XX - bot.health - INFO - Health check server started on port 8080 (GET /health)
 ```
 
@@ -98,6 +98,8 @@ You should see:
 
 ## Commands Reference
 
+### User Commands
+
 | Command | Description |
 |---------|-------------|
 | `/start` | Begin onboarding — select zones to subscribe |
@@ -109,6 +111,19 @@ You should see:
 | `/mystats` | View your reporter stats, badge, and accuracy |
 | `/share` | Generate invite message to share with friends |
 | `/help` | Show all commands and tips |
+
+### Admin Commands
+
+Admin commands require the user's Telegram ID to be listed in `ADMIN_USER_IDS`. Non-admin users receive a generic "Unknown command" response.
+
+| Command | Description |
+|---------|-------------|
+| `/admin` | Show all admin commands |
+| `/admin stats` | Global statistics dashboard (users, sightings, zones, feedback) |
+| `/admin user <id or @username>` | Look up a user's details, subscriptions, and activity |
+| `/admin zone <zone_name>` | Look up a zone's subscribers, sightings, and top reporters |
+| `/admin log [count]` | View recent admin actions audit log (default: 20, max: 100) |
+| `/admin help [command]` | Detailed help for a specific admin command |
 
 ---
 
@@ -279,20 +294,22 @@ Badge Progression:
 parkwatch-bot/
 ├── bot/
 │   ├── __init__.py              # Package marker
-│   ├── main.py                  # Bot logic, handlers, conversation flow (~1460 lines)
-│   ├── database.py              # Dual-driver DB abstraction (~525 lines)
+│   ├── main.py                  # Bot logic, handlers, admin commands, conversation flow
+│   ├── database.py              # Dual-driver DB abstraction (SQLite/PostgreSQL)
 │   ├── health.py                # Health check HTTP server (GET /health)
 │   └── logging_config.py        # Structured logging (text/JSON modes)
 ├── tests/
 │   ├── conftest.py              # Shared fixtures (fresh SQLite DB per test)
 │   ├── test_unit.py             # Unit tests for pure functions (48 tests)
 │   ├── test_database.py         # Database integration tests (57 tests)
-│   └── test_phase7.py           # Production infrastructure tests (22 tests)
+│   ├── test_phase7.py           # Production infrastructure tests (22 tests)
+│   └── test_phase8.py           # Admin foundation tests (43 tests)
 ├── alembic/
 │   ├── env.py                   # Alembic environment (reads DATABASE_URL)
 │   ├── script.py.mako           # Migration script template
 │   └── versions/
-│       └── 001_initial_schema.py  # Baseline migration
+│       ├── 001_initial_schema.py  # Baseline migration
+│       └── 002_admin_actions_table.py  # Phase 8: admin audit log
 ├── .github/
 │   └── workflows/
 │       └── ci.yml               # GitHub Actions CI (lint + typecheck + test)
@@ -324,6 +341,7 @@ parkwatch-bot/
 | `HEALTH_CHECK_PORT` | Health check server port | No | `$PORT` or `8080` |
 | `LOG_FORMAT` | Logging format: `text` (human) or `json` (structured) | No | `text` |
 | `SENTRY_DSN` | Sentry error tracking DSN | No | — |
+| `ADMIN_USER_IDS` | Comma-separated admin Telegram user IDs | No | `""` (empty) |
 
 ### Bot Settings (`config.py`)
 
@@ -335,11 +353,11 @@ parkwatch-bot/
 | `DUPLICATE_RADIUS_METERS` | 200 | GPS radius for duplicate detection (Haversine) |
 | `SIGHTING_RETENTION_DAYS` | 30 | Days to retain sighting data |
 | `FEEDBACK_WINDOW_HOURS` | 24 | Hours feedback buttons remain active |
-| `BOT_VERSION` | 1.1.0 | Version reported in health check & Sentry |
+| `BOT_VERSION` | 1.2.0 | Version reported in health check & Sentry |
 
 ### Database Schema
 
-Data is stored in 4 tables with 4 indexes. Tables are created automatically on startup.
+Data is stored in 5 tables with 5 indexes. Tables are created automatically on startup.
 
 ```sql
 -- User accounts and report counts
@@ -357,11 +375,16 @@ sightings (id TEXT PK, zone TEXT, description TEXT, reported_at TIMESTAMP,
 feedback (sighting_id TEXT REFERENCES sightings(id) ON DELETE CASCADE,
          user_id BIGINT, vote TEXT, created_at TIMESTAMP, PK(sighting_id, user_id))
 
+-- Admin audit log (Phase 8)
+admin_actions (id INTEGER PK AUTOINCREMENT, admin_id BIGINT, action TEXT,
+              target TEXT, detail TEXT, created_at TIMESTAMP)
+
 -- Indexes
 idx_sightings_zone_time ON sightings(zone, reported_at)
 idx_sightings_reporter ON sightings(reporter_id)
 idx_subscriptions_zone ON subscriptions(zone_name)
 idx_feedback_sighting ON feedback(sighting_id)
+idx_admin_actions_time ON admin_actions(created_at)
 ```
 
 **Local development** uses SQLite (`parkwatch.db` auto-created). **Production** uses PostgreSQL — just set `DATABASE_URL` and the database driver switches automatically.
@@ -389,10 +412,11 @@ pytest tests/test_unit.py
 pytest tests/test_database.py
 ```
 
-**Test suite summary** (127 tests):
+**Test suite summary** (170 tests):
 - **48 unit tests** — pure functions (`haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `sanitize_description`, `build_alert_message`, `generate_sighting_id`) plus zone data integrity
 - **57 integration tests** — database CRUD, subscriptions, sightings, feedback, accuracy, rate limiting, cleanup, and driver detection
 - **22 infrastructure tests** — health check server (5), structured logging (9), config validation (6), Sentry init (2)
+- **43 admin tests** — config parsing (6), admin_only decorator (2), audit log (7), global stats (6), user lookup (9), zone lookup (6), schema (3), help (2), zone validation (2)
 
 ### Linting & Type Checking
 
@@ -448,7 +472,7 @@ PORT=8443  # or let Railway inject PORT
 A lightweight HTTP server runs alongside the bot (enabled by default) and responds to `GET /health`:
 
 ```json
-{"status": "ok", "version": "1.1.0", "mode": "polling", "timestamp": "2026-02-13T12:00:00+00:00"}
+{"status": "ok", "version": "1.2.0", "mode": "polling", "timestamp": "2026-02-13T12:00:00+00:00"}
 ```
 
 Configure with `HEALTH_CHECK_ENABLED`, `HEALTH_CHECK_PORT` env vars. Railway's `healthcheckPath` is pre-configured to `/health`.
@@ -635,12 +659,14 @@ sudo systemctl status parkwatch
 - [x] Error tracking — Sentry integration (optional `sentry-sdk` dependency)
 - [x] 22 new tests for all Phase 7 features (127 total)
 
-### Next: Admin — Foundation & Visibility (Phase 8)
-- [ ] Admin authentication (`ADMIN_USER_IDS` env var, `admin_only` decorator)
-- [ ] `/admin` help command
-- [ ] `/admin stats` — global statistics dashboard
-- [ ] `/admin user <id>` / `/admin zone <name>` — lookup commands
-- [ ] Audit logging (`admin_actions` table, `/admin log`)
+### Admin — Foundation & Visibility (Phase 8) ✅
+- [x] Admin authentication (`ADMIN_USER_IDS` env var, `admin_only` decorator)
+- [x] `/admin` help command (with `/admin help <command>` for detailed usage)
+- [x] `/admin stats` — global statistics dashboard (users, sightings, zones, feedback)
+- [x] `/admin user <id or @username>` — user lookup (details, subscriptions, sightings, feedback)
+- [x] `/admin zone <name>` — zone lookup (subscribers, sightings, top reporters)
+- [x] Audit logging (`admin_actions` table, `/admin log [count]`, Alembic migration 002)
+- [x] 43 new tests for all Phase 8 features (170 total)
 
 ### Future: Admin — User Management & Moderation (Phase 9)
 - [ ] `/admin ban`, `/admin unban`, `/admin banlist`

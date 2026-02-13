@@ -2,15 +2,15 @@
 
 ## Audit Summary
 
-**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 7 update)
+**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 8 update)
 **Scope:** Full code review against `parking_warden_bot_spec.md` and `README.md`
 **Files reviewed:** `bot/main.py`, `bot/database.py`, `bot/health.py`, `bot/logging_config.py`, `config.py`, `requirements.txt`, `.env.example`
 
 ---
 
-## Status: Phases 1–7 Complete
+## Status: Phases 1–8 Complete
 
-Phases 1 through 7 addressed all critical bugs, UX issues, data persistence, robustness gaps, known code defects, established automated testing and CI, and hardened the bot for production deployment. All items below are checked off and verified in the current codebase.
+Phases 1 through 8 addressed all critical bugs, UX issues, data persistence, robustness gaps, known code defects, established automated testing and CI, hardened the bot for production deployment, and added admin foundation with visibility tools. All items below are checked off and verified in the current codebase.
 
 ### Phase 1: Critical Fixes (Code-Doc Alignment & Stability) ✅
 
@@ -51,7 +51,7 @@ Phases 1 through 7 addressed all critical bugs, UX issues, data persistence, rob
 
 ### What's Working Well
 
-1. **Feature completeness** — All 9 commands implemented and functional
+1. **Feature completeness** — All 9 user commands + admin command suite implemented and functional
 2. **ConversationHandler** — Proper 6-state machine with timeout, fallbacks, and `/cancel` support
 3. **Database layer** — Clean dual-driver abstraction with WAL mode, connection pooling, parameterized queries
 4. **GPS-aware duplicate detection** — Haversine + 200m radius, zone-level fallback
@@ -61,10 +61,11 @@ Phases 1 through 7 addressed all critical bugs, UX issues, data persistence, rob
 8. **Config externalization** — All tunable values in `config.py` with env var overrides
 9. **Timezone-safe datetime** — All `datetime.now(timezone.utc)` throughout codebase
 10. **Proper Python packaging** — Runs as `python -m bot.main`, relative imports, no sys.path hacks
-11. **Test coverage** — 127 tests (48 unit + 57 integration + 22 infrastructure) with 100% pass rate
+11. **Test coverage** — 170 tests (48 unit + 57 integration + 22 infrastructure + 43 admin) with 100% pass rate
 12. **CI pipeline** — Automated lint, type check, and test on every push/PR via GitHub Actions
 13. **Code quality** — All ruff lint and format checks pass, mypy type checking clean
 14. **Production infrastructure** — Webhook mode, health check endpoint, structured JSON logging, Alembic migrations, Sentry integration
+15. **Admin foundation** — Authentication layer, global stats dashboard, user/zone lookup, audit logging with full test coverage
 
 ---
 
@@ -107,7 +108,7 @@ Harden deployment, observability, and schema management for real-world scale. Se
 
 ---
 
-### Phase 8: Admin — Foundation & Visibility
+### Phase 8: Admin — Foundation & Visibility ✅
 
 Establish the admin authentication layer, provide global visibility into bot activity, and create the audit infrastructure that all subsequent admin features depend on.
 
@@ -115,18 +116,18 @@ Establish the admin authentication layer, provide global visibility into bot act
 
 #### 8.1 Admin Authentication & Authorization
 
-- [ ] **8.1.1** `ADMIN_USER_IDS` environment variable — comma-separated list of Telegram user IDs authorized as admins
-- [ ] **8.1.2** `admin_only` decorator — wraps admin command handlers; rejects unauthorized users with a generic "Unknown command" response (avoids revealing admin commands exist)
-- [ ] **8.1.3** Add `ADMIN_USER_IDS` to `.env.example` and document in README
+- [x] **8.1.1** `ADMIN_USER_IDS` environment variable — comma-separated list of Telegram user IDs authorized as admins; parsed in `config.py` with validation (non-numeric values silently ignored)
+- [x] **8.1.2** `admin_only` decorator — wraps `admin_command()` handler; rejects unauthorized users with a generic "Unknown command" response (avoids revealing admin commands exist)
+- [x] **8.1.3** Add `ADMIN_USER_IDS` to `.env.example` and documented in README
 
 #### 8.2 Admin Help
 
-- [ ] **8.2.1** `/admin` command — lists all available admin commands with descriptions (only shown to authenticated admins)
-- [ ] **8.2.2** `/admin help <command>` — detailed usage for a specific admin command
+- [x] **8.2.1** `/admin` command — lists all available admin commands with descriptions (only shown to authenticated admins); routed through `admin_command()` which dispatches to subcommand handlers
+- [x] **8.2.2** `/admin help <command>` — detailed usage for a specific admin command; `ADMIN_COMMANDS_HELP` (brief) and `ADMIN_COMMANDS_DETAILED` (full) dictionaries
 
 #### 8.3 Global Statistics Dashboard
 
-- [ ] **8.3.1** `/admin stats` — display key metrics in a single message:
+- [x] **8.3.1** `/admin stats` — displays key metrics in a single message:
   - Total registered users (all-time)
   - Active users (reported or gave feedback in last 7 days)
   - Total sightings (all-time and last 24 hours)
@@ -134,38 +135,43 @@ Establish the admin authentication layer, provide global visibility into bot act
   - Top 5 most-subscribed zones
   - Top 5 most-reported zones (last 7 days)
   - Feedback totals (positive vs negative, overall accuracy rate)
-- [ ] **8.3.2** Database methods: `get_global_stats()`, `get_top_zones_by_subscribers()`, `get_top_zones_by_sightings()`, `get_active_user_count()`
+- [x] **8.3.2** Database methods: `get_global_stats()`, `get_top_zones_by_subscribers()`, `get_top_zones_by_sightings()`; active users approximated from reporter + feedback giver counts
 
 #### 8.4 User & Zone Lookup
 
-- [ ] **8.4.1** `/admin user <telegram_id or @username>` — look up a specific user:
+- [x] **8.4.1** `/admin user <telegram_id or @username>` — look up a specific user:
   - Registration date, report count, badge, accuracy score
   - Subscribed zones
   - Recent sightings (last 10)
   - Feedback received (positive/negative totals)
-  - Ban status (once Phase 9 is implemented)
-- [ ] **8.4.2** `/admin zone <zone_name>` — look up a specific zone:
+  - Ban status placeholder (once Phase 9 is implemented)
+- [x] **8.4.2** `/admin zone <zone_name>` — look up a specific zone (case-insensitive matching):
   - Subscriber count
   - Sighting count (last 24h / 7d / all-time)
   - Top reporters in this zone
   - Most recent sightings
-- [ ] **8.4.3** Database methods: `get_user_details()`, `get_zone_details()`, `get_user_recent_sightings()`, `get_zone_top_reporters()`
+- [x] **8.4.3** Database methods: `get_user_details()`, `get_user_by_username()`, `get_zone_details()`, `get_user_recent_sightings()`, `get_user_subscriptions_list()`, `get_zone_top_reporters()`, `get_zone_recent_sightings()`
 
 #### 8.5 Audit Logging
 
-- [ ] **8.5.1** `admin_actions` table — schema:
+- [x] **8.5.1** `admin_actions` table — schema:
   ```sql
   admin_actions (
     id INTEGER PK AUTOINCREMENT,
     admin_id BIGINT NOT NULL,
-    action TEXT NOT NULL,        -- e.g. 'ban', 'unban', 'delete_sighting', 'broadcast'
-    target TEXT,                 -- e.g. user ID, sighting ID, zone name
+    action TEXT NOT NULL,        -- e.g. 'view_stats', 'lookup_user', 'lookup_zone'
+    target TEXT,                 -- e.g. user ID, zone name
     detail TEXT,                 -- free-form context (reason, message preview, etc.)
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
   )
   ```
-- [ ] **8.5.2** `log_admin_action()` database method — called by every admin write operation
-- [ ] **8.5.3** `/admin log [count]` — view the most recent N admin actions (default 20)
+  Alembic migration `002_admin_actions_table.py` added; table also created by `create_tables()` fallback.
+- [x] **8.5.2** `log_admin_action()` database method — called by every admin operation (`view_stats`, `lookup_user`, `lookup_zone`)
+- [x] **8.5.3** `/admin log [count]` — view the most recent N admin actions (default 20, max 100)
+
+#### 8.6 Testing
+
+- [x] **8.6.1** 43 new tests in `tests/test_phase8.py`: config parsing (6 tests), admin_only decorator (2 tests), audit log DB operations (7 tests), global stats queries (6 tests), user lookup DB methods (9 tests), zone lookup DB methods (6 tests), admin_actions schema (3 tests), admin help constants (2 tests), zone validation (2 tests) — **170 total tests**
 
 ---
 
@@ -339,15 +345,15 @@ Quick reference for all admin commands once fully implemented.
 | `/admin config <key> <val>` | 10.4 | Adjust a setting at runtime |
 | `/admin config reset <key>` | 10.4 | Reset setting to default |
 
-## Database Changes Required (Phases 8–10)
+## Database Changes (Phases 8–10)
 
-| Change | Phase | Description |
-|--------|-------|-------------|
-| New table: `admin_actions` | 8.5 | Audit log for all admin operations |
-| New table: `banned_users` | 9.1 | Banned user records with reason |
-| New column: `sightings.flagged` | 9.2 | Boolean flag for moderation queue |
-| New column: `users.warnings` | 9.3 | Warning count per user |
-| New table: `config_overrides` | 10.4 | Runtime configuration overrides |
+| Change | Phase | Status | Description |
+|--------|-------|--------|-------------|
+| New table: `admin_actions` | 8.5 | ✅ Done | Audit log for all admin operations |
+| New table: `banned_users` | 9.1 | Planned | Banned user records with reason |
+| New column: `sightings.flagged` | 9.2 | Planned | Boolean flag for moderation queue |
+| New column: `users.warnings` | 9.3 | Planned | Warning count per user |
+| New table: `config_overrides` | 10.4 | Planned | Runtime configuration overrides |
 
 ## Environment Variables Added (Phase 7+)
 
@@ -359,7 +365,7 @@ Quick reference for all admin commands once fully implemented.
 | `HEALTH_CHECK_PORT` | 7.2 | Health check server port | `$PORT` or `8080` |
 | `LOG_FORMAT` | 7.3 | Logging format: `text` or `json` | `text` |
 | `SENTRY_DSN` | 7.5 | Sentry error tracking DSN | — |
-| `ADMIN_USER_IDS` | 8.1 | Comma-separated admin Telegram IDs | (required) |
+| `ADMIN_USER_IDS` | 8.1 | Comma-separated admin Telegram IDs | `""` (empty) |
 | `MAX_WARNINGS` | 9.3 | Warnings before auto-ban | 3 |
 
 ---
@@ -368,26 +374,28 @@ Quick reference for all admin commands once fully implemented.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `bot/main.py` | ~1460 | All bot logic (handlers, routing, conversation flow, webhook/polling) |
-| `bot/database.py` | ~525 | Dual-driver database abstraction (SQLite/PostgreSQL) |
+| `bot/main.py` | ~1850 | All bot logic: user handlers, admin handlers, conversation flow, webhook/polling |
+| `bot/database.py` | ~720 | Dual-driver database abstraction (SQLite/PostgreSQL) including admin queries |
 | `bot/health.py` | ~75 | Health check HTTP server (asyncio-based, `/health` endpoint) |
 | `bot/logging_config.py` | ~65 | Structured logging configuration (text/JSON modes) |
 | `bot/__init__.py` | 1 | Package marker |
-| `config.py` | ~37 | Environment config and bot settings (Phases 1–7) |
+| `config.py` | ~48 | Environment config and bot settings (Phases 1–8, incl. `ADMIN_USER_IDS`) |
 | `pyproject.toml` | ~80 | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | 5 | Runtime dependencies (for platforms that don't use pyproject.toml) |
-| `.env.example` | ~22 | Template for environment variables (including Phase 7 additions) |
+| `.env.example` | ~27 | Template for environment variables (including Phase 8 additions) |
 | `alembic.ini` | ~40 | Alembic migration framework configuration |
 | `alembic/env.py` | ~50 | Alembic environment (reads DATABASE_URL from config.py) |
 | `alembic/script.py.mako` | ~25 | Alembic migration script template |
 | `alembic/versions/001_initial_schema.py` | ~80 | Baseline migration matching create_tables() |
+| `alembic/versions/002_admin_actions_table.py` | ~40 | Phase 8 migration: admin_actions audit log table |
 | `tests/conftest.py` | ~25 | Shared test fixtures (fresh SQLite DB per test) |
 | `tests/test_unit.py` | ~340 | Unit tests for pure functions and zone data integrity (48 tests) |
 | `tests/test_database.py` | ~600 | Database integration tests (CRUD, queries, transactions) (57 tests) |
 | `tests/test_phase7.py` | ~240 | Phase 7 tests: health check, logging, config, Sentry (22 tests) |
+| `tests/test_phase8.py` | ~530 | Phase 8 tests: admin auth, stats, lookup, audit log (43 tests) |
 | `.github/workflows/ci.yml` | ~45 | GitHub Actions CI pipeline (lint + typecheck + test) |
-| `parking_warden_bot_spec.md` | ~630 | Full product specification with user flows |
-| `README.md` | ~700 | User-facing documentation |
+| `parking_warden_bot_spec.md` | ~650 | Full product specification with user flows |
+| `README.md` | ~800 | User-facing documentation |
 | `IMPROVEMENTS.md` | — | This file (code review & improvement plan) |
 | `Procfile` | 1 | Heroku-style process declaration |
 | `railway.toml` | ~10 | Railway.app deployment config (with health check) |
@@ -395,4 +403,4 @@ Quick reference for all admin commands once fully implemented.
 
 ---
 
-*Last updated: 2026-02-13*
+*Last updated: 2026-02-13 (Phase 8)*
