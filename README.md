@@ -83,7 +83,8 @@ python -m bot.main
 
 You should see:
 ```
-2026-XX-XX XX:XX:XX - __main__ - INFO - 🚗 ParkWatch SG Bot starting...
+2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.1.0 starting in polling mode
+2026-XX-XX XX:XX:XX - bot.health - INFO - Health check server started on port 8080 (GET /health)
 ```
 
 ### Get Your Bot Token
@@ -267,6 +268,9 @@ Badge Progression:
 | Config | python-dotenv |
 | Database (dev) | SQLite via aiosqlite |
 | Database (prod) | PostgreSQL via asyncpg (connection pooling) |
+| Migrations | Alembic (versioned schema changes) |
+| Logging | Structured JSON or human-readable text |
+| Error Tracking | Sentry (optional, via `sentry-sdk`) |
 | Hosting | Local / Railway / Render / VPS |
 
 ### Project Structure
@@ -275,16 +279,24 @@ Badge Progression:
 parkwatch-bot/
 ├── bot/
 │   ├── __init__.py              # Package marker
-│   ├── main.py                  # Bot logic, handlers, conversation flow (~1420 lines)
-│   └── database.py              # Dual-driver DB abstraction (~525 lines)
+│   ├── main.py                  # Bot logic, handlers, conversation flow (~1460 lines)
+│   ├── database.py              # Dual-driver DB abstraction (~525 lines)
+│   ├── health.py                # Health check HTTP server (GET /health)
+│   └── logging_config.py        # Structured logging (text/JSON modes)
 ├── tests/
-│   ├── __init__.py              # Test package marker
 │   ├── conftest.py              # Shared fixtures (fresh SQLite DB per test)
 │   ├── test_unit.py             # Unit tests for pure functions (48 tests)
-│   └── test_database.py         # Database integration tests (57 tests)
+│   ├── test_database.py         # Database integration tests (57 tests)
+│   └── test_phase7.py           # Production infrastructure tests (22 tests)
+├── alembic/
+│   ├── env.py                   # Alembic environment (reads DATABASE_URL)
+│   ├── script.py.mako           # Migration script template
+│   └── versions/
+│       └── 001_initial_schema.py  # Baseline migration
 ├── .github/
 │   └── workflows/
 │       └── ci.yml               # GitHub Actions CI (lint + typecheck + test)
+├── alembic.ini                  # Alembic configuration
 ├── config.py                    # Environment configuration & bot settings
 ├── pyproject.toml               # Project metadata, deps, tool configs
 ├── requirements.txt             # Runtime dependencies (legacy compat)
@@ -299,13 +311,19 @@ parkwatch-bot/
 
 ### Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | Yes |
-| `DATABASE_URL` | PostgreSQL connection string (SQLite used if omitted) | No |
-| `DATABASE_PRIVATE_URL` | Railway internal DB URL (takes priority over `DATABASE_URL`) | No |
-| `SIGHTING_RETENTION_DAYS` | Days to retain sighting data (default: 30) | No |
-| `FEEDBACK_WINDOW_HOURS` | Hours feedback buttons remain active (default: 24) | No |
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | Yes | — |
+| `DATABASE_URL` | PostgreSQL connection string (SQLite used if omitted) | No | SQLite |
+| `DATABASE_PRIVATE_URL` | Railway internal DB URL (takes priority over `DATABASE_URL`) | No | — |
+| `SIGHTING_RETENTION_DAYS` | Days to retain sighting data | No | `30` |
+| `FEEDBACK_WINDOW_HOURS` | Hours feedback buttons remain active | No | `24` |
+| `WEBHOOK_URL` | Public URL for webhook mode (omit for polling) | No | — |
+| `PORT` | Webhook listener port | No | `8443` |
+| `HEALTH_CHECK_ENABLED` | Enable the health check HTTP server | No | `true` |
+| `HEALTH_CHECK_PORT` | Health check server port | No | `$PORT` or `8080` |
+| `LOG_FORMAT` | Logging format: `text` (human) or `json` (structured) | No | `text` |
+| `SENTRY_DSN` | Sentry error tracking DSN | No | — |
 
 ### Bot Settings (`config.py`)
 
@@ -317,6 +335,7 @@ parkwatch-bot/
 | `DUPLICATE_RADIUS_METERS` | 200 | GPS radius for duplicate detection (Haversine) |
 | `SIGHTING_RETENTION_DAYS` | 30 | Days to retain sighting data |
 | `FEEDBACK_WINDOW_HOURS` | 24 | Hours feedback buttons remain active |
+| `BOT_VERSION` | 1.1.0 | Version reported in health check & Sentry |
 
 ### Database Schema
 
@@ -370,9 +389,10 @@ pytest tests/test_unit.py
 pytest tests/test_database.py
 ```
 
-**Test suite summary** (105 tests):
+**Test suite summary** (127 tests):
 - **48 unit tests** — pure functions (`haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `sanitize_description`, `build_alert_message`, `generate_sighting_id`) plus zone data integrity
 - **57 integration tests** — database CRUD, subscriptions, sightings, feedback, accuracy, rate limiting, cleanup, and driver detection
+- **22 infrastructure tests** — health check server (5), structured logging (9), config validation (6), Sentry init (2)
 
 ### Linting & Type Checking
 
@@ -406,13 +426,78 @@ See `.github/workflows/ci.yml` for the full pipeline configuration.
 
 ## Deployment
 
+### Polling vs Webhook Mode
+
+The bot supports two modes of receiving Telegram updates:
+
+| | Polling (default) | Webhook |
+|---|---|---|
+| **How it works** | Bot repeatedly asks Telegram for updates | Telegram pushes updates to your server |
+| **Config** | No extra config needed | Set `WEBHOOK_URL` env var |
+| **Best for** | Local development, VPS | Railway, Render, Kubernetes |
+| **Requires** | Outbound internet access | Public HTTPS URL |
+
+To enable webhook mode, set:
+```bash
+WEBHOOK_URL=https://your-app.up.railway.app
+PORT=8443  # or let Railway inject PORT
+```
+
+### Health Check Endpoint
+
+A lightweight HTTP server runs alongside the bot (enabled by default) and responds to `GET /health`:
+
+```json
+{"status": "ok", "version": "1.1.0", "mode": "polling", "timestamp": "2026-02-13T12:00:00+00:00"}
+```
+
+Configure with `HEALTH_CHECK_ENABLED`, `HEALTH_CHECK_PORT` env vars. Railway's `healthcheckPath` is pre-configured to `/health`.
+
+### Structured Logging
+
+Set `LOG_FORMAT=json` for structured JSON logging suitable for log aggregation services (Datadog, ELK, CloudWatch):
+
+```json
+{"timestamp":"2026-02-13T14:30:00.123+00:00","level":"INFO","logger":"bot.main","message":"Bot starting..."}
+```
+
+Default is `text` (human-readable).
+
+### Error Tracking (Sentry)
+
+Install Sentry support and set the DSN:
+```bash
+pip install ".[sentry]"
+# Then set in .env:
+SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+```
+
+Sentry is optional — the bot works without it. If `SENTRY_DSN` is set but `sentry-sdk` is not installed, a warning is logged.
+
+### Database Migrations (Alembic)
+
+Schema changes are versioned with Alembic. The initial migration (`001_initial_schema.py`) matches the existing `create_tables()` schema.
+
+```bash
+# Run migrations to latest
+alembic upgrade head
+
+# Check current version
+alembic current
+
+# Generate a new migration (after modifying the schema)
+alembic revision -m "add_new_column"
+```
+
+The `create_tables()` method is retained as a fallback for fresh installs that don't use Alembic.
+
 ### Local Development
 
 ```bash
 python -m bot.main
 ```
 
-Bot runs in foreground. Press Ctrl+C to stop.
+Bot runs in polling mode in foreground. Press Ctrl+C to stop. Health check available at `http://localhost:8080/health`.
 
 ### Production Deployment
 
@@ -422,19 +507,19 @@ Bot runs in foreground. Press Ctrl+C to stop.
 2. Sign up at [Railway](https://railway.app)
 3. Create new project → Deploy from GitHub repo
 4. Add a PostgreSQL database service to the project
-5. Add environment variable: `TELEGRAM_BOT_TOKEN`
-6. Deploy — Railway auto-injects `DATABASE_URL` and handles the rest
+5. Add environment variables: `TELEGRAM_BOT_TOKEN`, `WEBHOOK_URL` (your Railway app URL)
+6. Deploy — Railway auto-injects `DATABASE_URL` and `PORT`, health check is pre-configured
 
 #### Option 2: Render
 
 1. Push code to GitHub
 2. Sign up at [Render](https://render.com)
 3. Create a PostgreSQL database (or skip for SQLite)
-4. Create new **Background Worker** (not Web Service)
+4. Create new **Background Worker** (not Web Service) for polling mode, or **Web Service** for webhook mode
 5. Connect your GitHub repo
 6. Set build command: `pip install -r requirements.txt`
 7. Set start command: `python -m bot.main`
-8. Add environment variables: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL` (from step 3)
+8. Add environment variables: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL` (from step 3), optionally `WEBHOOK_URL`
 
 #### Option 3: DigitalOcean / VPS
 
@@ -542,14 +627,15 @@ sudo systemctl status parkwatch
 - [x] GitHub Actions CI pipeline (ruff lint + mypy type check + pytest across 3.10/3.11/3.12)
 - [x] Lint compliance: import sorting, unused variable cleanup, `contextlib.suppress` patterns
 
-### Next: Production Infrastructure (Phase 7)
-- [ ] Webhook mode for production
-- [ ] Health check endpoint
-- [ ] Structured logging (JSON)
-- [ ] Database migrations (Alembic)
-- [ ] Error tracking (Sentry)
+### Production Infrastructure (Phase 7) ✅
+- [x] Webhook mode — set `WEBHOOK_URL` to auto-switch from polling to webhook
+- [x] Health check endpoint — `GET /health` returns JSON status (version, mode, timestamp)
+- [x] Structured logging — `LOG_FORMAT=json` for JSON output; text default for development
+- [x] Database migrations — Alembic with initial baseline migration matching existing schema
+- [x] Error tracking — Sentry integration (optional `sentry-sdk` dependency)
+- [x] 22 new tests for all Phase 7 features (127 total)
 
-### Future: Admin — Foundation & Visibility (Phase 8)
+### Next: Admin — Foundation & Visibility (Phase 8)
 - [ ] Admin authentication (`ADMIN_USER_IDS` env var, `admin_only` decorator)
 - [ ] `/admin` help command
 - [ ] `/admin stats` — global statistics dashboard

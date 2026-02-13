@@ -2,15 +2,15 @@
 
 ## Audit Summary
 
-**Date:** 2026-02-12
+**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 7 update)
 **Scope:** Full code review against `parking_warden_bot_spec.md` and `README.md`
-**Files reviewed:** `bot/main.py` (1419 lines), `bot/database.py` (524 lines), `config.py` (18 lines), `requirements.txt`, `.env.example`
+**Files reviewed:** `bot/main.py`, `bot/database.py`, `bot/health.py`, `bot/logging_config.py`, `config.py`, `requirements.txt`, `.env.example`
 
 ---
 
-## Status: Phases 1–6 Complete
+## Status: Phases 1–7 Complete
 
-Phases 1 through 6 addressed all critical bugs, UX issues, data persistence, robustness gaps, known code defects, and established automated testing and CI. All items below are checked off and verified in the current codebase.
+Phases 1 through 7 addressed all critical bugs, UX issues, data persistence, robustness gaps, known code defects, established automated testing and CI, and hardened the bot for production deployment. All items below are checked off and verified in the current codebase.
 
 ### Phase 1: Critical Fixes (Code-Doc Alignment & Stability) ✅
 
@@ -61,9 +61,10 @@ Phases 1 through 6 addressed all critical bugs, UX issues, data persistence, rob
 8. **Config externalization** — All tunable values in `config.py` with env var overrides
 9. **Timezone-safe datetime** — All `datetime.now(timezone.utc)` throughout codebase
 10. **Proper Python packaging** — Runs as `python -m bot.main`, relative imports, no sys.path hacks
-11. **Test coverage** — 105 tests (48 unit + 57 integration) with 100% pass rate
+11. **Test coverage** — 127 tests (48 unit + 57 integration + 22 infrastructure) with 100% pass rate
 12. **CI pipeline** — Automated lint, type check, and test on every push/PR via GitHub Actions
 13. **Code quality** — All ruff lint and format checks pass, mypy type checking clean
+14. **Production infrastructure** — Webhook mode, health check endpoint, structured JSON logging, Alembic migrations, Sentry integration
 
 ---
 
@@ -93,15 +94,16 @@ Automated test suite and CI pipeline to maintain code quality and prevent regres
 - [x] **6.5** `pyproject.toml` for proper packaging — project metadata, dependencies, `[project.optional-dependencies] dev`, tool configs for pytest/ruff/mypy
 - [x] **6.6** Lint fixes applied: import sorting (isort), unused variables removed, f-string cleanup, `contextlib.suppress` for try-except-pass patterns, PEP 8 naming compliance
 
-### Phase 7: Production Infrastructure
+### Phase 7: Production Infrastructure ✅
 
 Harden deployment, observability, and schema management for real-world scale. Separated from admin functionality (Phase 8–10) which is a distinct feature domain.
 
-- [ ] **7.1** Webhook mode support (alongside polling) for production deployments
-- [ ] **7.2** Health check endpoint (lightweight HTTP server for deployment platform monitoring)
-- [ ] **7.3** Structured logging (JSON format) for log aggregation services
-- [ ] **7.4** Database migrations with Alembic (versioned schema changes)
-- [ ] **7.5** Sentry or equivalent error tracking integration
+- [x] **7.1** Webhook mode support (alongside polling) — set `WEBHOOK_URL` to enable; bot auto-detects and switches from `run_polling()` to `run_webhook()` with Telegram-compatible URL path; `PORT` configurable via env var
+- [x] **7.2** Health check endpoint — standalone asyncio HTTP server in `bot/health.py`; responds to `GET /health` with JSON status (version, mode, timestamp); configurable via `HEALTH_CHECK_ENABLED` and `HEALTH_CHECK_PORT`; lifecycle managed in `post_init`/`post_shutdown`; Railway config updated with `healthcheckPath = "/health"`
+- [x] **7.3** Structured logging (JSON format) — `bot/logging_config.py` with `JSONFormatter` producing single-line JSON with timestamp, level, logger name, message, and optional exception/context fields; toggle via `LOG_FORMAT=json` env var; text mode preserved as default for development; noisy third-party loggers suppressed
+- [x] **7.4** Database migrations with Alembic — `alembic.ini`, `alembic/env.py`, migration template, and initial baseline migration (`001_initial_schema.py`) matching existing `create_tables()` schema; reads `DATABASE_URL` from `config.py`; supports both SQLite and PostgreSQL; `create_tables()` retained as fallback for zero-migration bootstrapping
+- [x] **7.5** Sentry error tracking — graceful init via `_init_sentry()` in `main()`; reads `SENTRY_DSN` from env; sets release tag to bot version, traces_sample_rate=0.1, environment auto-detected from webhook/polling mode; `sentry-sdk` is an optional dependency (`pip install ".[sentry]"`); missing SDK produces a warning, not a crash
+- [x] **7.6** Test coverage for all Phase 7 features — 22 new tests: health check server lifecycle (5 tests), JSON formatter (5 tests), setup_logging (4 tests), config validation (6 tests), Sentry init (2 tests) — **127 total tests**
 
 ---
 
@@ -347,10 +349,16 @@ Quick reference for all admin commands once fully implemented.
 | New column: `users.warnings` | 9.3 | Warning count per user |
 | New table: `config_overrides` | 10.4 | Runtime configuration overrides |
 
-## Environment Variables Added (Phases 8–10)
+## Environment Variables Added (Phase 7+)
 
 | Variable | Phase | Description | Default |
 |----------|-------|-------------|---------|
+| `WEBHOOK_URL` | 7.1 | Public URL for webhook mode (omit for polling) | — |
+| `PORT` | 7.1 | Webhook listener port | `8443` |
+| `HEALTH_CHECK_ENABLED` | 7.2 | Enable/disable health check server | `true` |
+| `HEALTH_CHECK_PORT` | 7.2 | Health check server port | `$PORT` or `8080` |
+| `LOG_FORMAT` | 7.3 | Logging format: `text` or `json` | `text` |
+| `SENTRY_DSN` | 7.5 | Sentry error tracking DSN | — |
 | `ADMIN_USER_IDS` | 8.1 | Comma-separated admin Telegram IDs | (required) |
 | `MAX_WARNINGS` | 9.3 | Warnings before auto-ban | 3 |
 
@@ -360,22 +368,29 @@ Quick reference for all admin commands once fully implemented.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `bot/main.py` | ~1420 | All bot logic (handlers, routing, conversation flow) |
+| `bot/main.py` | ~1460 | All bot logic (handlers, routing, conversation flow, webhook/polling) |
 | `bot/database.py` | ~525 | Dual-driver database abstraction (SQLite/PostgreSQL) |
+| `bot/health.py` | ~75 | Health check HTTP server (asyncio-based, `/health` endpoint) |
+| `bot/logging_config.py` | ~65 | Structured logging configuration (text/JSON modes) |
 | `bot/__init__.py` | 1 | Package marker |
-| `config.py` | 18 | Environment config and bot settings |
-| `pyproject.toml` | ~75 | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
+| `config.py` | ~37 | Environment config and bot settings (Phases 1–7) |
+| `pyproject.toml` | ~80 | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | 5 | Runtime dependencies (for platforms that don't use pyproject.toml) |
-| `.env.example` | 6 | Template for environment variables |
+| `.env.example` | ~22 | Template for environment variables (including Phase 7 additions) |
+| `alembic.ini` | ~40 | Alembic migration framework configuration |
+| `alembic/env.py` | ~50 | Alembic environment (reads DATABASE_URL from config.py) |
+| `alembic/script.py.mako` | ~25 | Alembic migration script template |
+| `alembic/versions/001_initial_schema.py` | ~80 | Baseline migration matching create_tables() |
 | `tests/conftest.py` | ~25 | Shared test fixtures (fresh SQLite DB per test) |
 | `tests/test_unit.py` | ~340 | Unit tests for pure functions and zone data integrity (48 tests) |
 | `tests/test_database.py` | ~600 | Database integration tests (CRUD, queries, transactions) (57 tests) |
+| `tests/test_phase7.py` | ~240 | Phase 7 tests: health check, logging, config, Sentry (22 tests) |
 | `.github/workflows/ci.yml` | ~45 | GitHub Actions CI pipeline (lint + typecheck + test) |
 | `parking_warden_bot_spec.md` | ~630 | Full product specification with user flows |
-| `README.md` | ~650 | User-facing documentation |
+| `README.md` | ~700 | User-facing documentation |
 | `IMPROVEMENTS.md` | — | This file (code review & improvement plan) |
 | `Procfile` | 1 | Heroku-style process declaration |
-| `railway.toml` | 9 | Railway.app deployment config |
+| `railway.toml` | ~10 | Railway.app deployment config (with health check) |
 | `runtime.txt` | 1 | Python version specification (3.10) |
 
 ---

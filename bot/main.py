@@ -25,23 +25,32 @@ from telegram.ext import (
 )
 
 from config import (
+    BOT_VERSION,
     DATABASE_URL,
     DUPLICATE_RADIUS_METERS,
     DUPLICATE_WINDOW_MINUTES,
     FEEDBACK_WINDOW_HOURS,
+    HEALTH_CHECK_ENABLED,
+    HEALTH_CHECK_PORT,
+    LOG_FORMAT,
     MAX_REPORTS_PER_HOUR,
+    PORT,
+    SENTRY_DSN,
     SIGHTING_EXPIRY_MINUTES,
     SIGHTING_RETENTION_DAYS,
     TELEGRAM_BOT_TOKEN,
+    WEBHOOK_URL,
 )
 
 from .database import close_db, get_db, init_db
+from .health import start_health_server, stop_health_server
+from .logging_config import setup_logging
 
 # Singapore Time (UTC+8)
 SGT = timezone(timedelta(hours=8))
 
-# Set up logging
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+# Set up structured logging (must happen before any logger usage)
+setup_logging(log_format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 
@@ -1332,21 +1341,47 @@ async def cleanup_job(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def post_init(application):
-    """Initialize database after application startup."""
+    """Initialize database, health check, and Sentry after application startup."""
     await init_db(DATABASE_URL)
+
+    # Start health check server
+    run_mode = "webhook" if WEBHOOK_URL else "polling"
+    if HEALTH_CHECK_ENABLED:
+        await start_health_server(HEALTH_CHECK_PORT, run_mode=run_mode)
 
 
 async def post_shutdown(application):
-    """Close database on application shutdown."""
+    """Shut down health check server and close database."""
+    await stop_health_server()
     await close_db()
+
+
+def _init_sentry() -> None:
+    """Initialize Sentry error tracking if SENTRY_DSN is configured."""
+    if not SENTRY_DSN:
+        return
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            release=f"parkwatch-bot@{BOT_VERSION}",
+            traces_sample_rate=0.1,
+            environment="production" if WEBHOOK_URL else "development",
+        )
+        logger.info("Sentry error tracking initialized")
+    except ImportError:
+        logger.warning("SENTRY_DSN is set but sentry-sdk is not installed — skipping Sentry init")
 
 
 def main():
     """Start the bot."""
     if not TELEGRAM_BOT_TOKEN:
-        print("ERROR: TELEGRAM_BOT_TOKEN not set!")
-        print("Create a .env file with: TELEGRAM_BOT_TOKEN=your_token_here")
+        logger.error("TELEGRAM_BOT_TOKEN not set! Create a .env file with: TELEGRAM_BOT_TOKEN=your_token_here")
         return
+
+    # Initialize Sentry error tracking (if configured)
+    _init_sentry()
 
     # Create application with lifecycle hooks
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
@@ -1410,9 +1445,23 @@ def main():
     # Schedule sighting cleanup every 6 hours
     app.job_queue.run_repeating(cleanup_job, interval=21600, first=60)
 
-    # Start bot
-    logger.info("🚗 ParkWatch SG Bot starting...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Start bot in webhook or polling mode
+    if WEBHOOK_URL:
+        logger.info(
+            "ParkWatch SG Bot v%s starting in webhook mode on port %d",
+            BOT_VERSION,
+            PORT,
+        )
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=f"webhook/{TELEGRAM_BOT_TOKEN}",
+            webhook_url=f"{WEBHOOK_URL}/webhook/{TELEGRAM_BOT_TOKEN}",
+            allowed_updates=Update.ALL_TYPES,
+        )
+    else:
+        logger.info("ParkWatch SG Bot v%s starting in polling mode", BOT_VERSION)
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":

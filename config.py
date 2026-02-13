@@ -16,3 +16,22 @@ DUPLICATE_WINDOW_MINUTES = 5
 DUPLICATE_RADIUS_METERS = 200
 SIGHTING_RETENTION_DAYS = int(os.getenv("SIGHTING_RETENTION_DAYS", "30"))
 FEEDBACK_WINDOW_HOURS = int(os.getenv("FEEDBACK_WINDOW_HOURS", "24"))
+
+# --- Phase 7: Production Infrastructure ---
+
+# Webhook mode: set WEBHOOK_URL to enable (e.g. "https://myapp.up.railway.app")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT = int(os.getenv("PORT", "8443"))
+
+# Health check endpoint (runs on a separate lightweight HTTP server)
+HEALTH_CHECK_ENABLED = os.getenv("HEALTH_CHECK_ENABLED", "true").lower() in ("true", "1", "yes")
+HEALTH_CHECK_PORT = int(os.getenv("HEALTH_CHECK_PORT", os.getenv("PORT", "8080")))
+
+# Structured logging: "text" (human-readable, default) or "json" (for log aggregation)
+LOG_FORMAT = os.getenv("LOG_FORMAT", "text")
+
+# Sentry error tracking: set DSN to enable (e.g. "https://key@o0.ingest.sentry.io/0")
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+
+# Bot version (for health check and Sentry release tracking)
+BOT_VERSION = "1.1.0"
