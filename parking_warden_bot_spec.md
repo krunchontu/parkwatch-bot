@@ -399,20 +399,23 @@ Hougang, Sengkang, Punggol, Serangoon, Kovan, Potong Pasir, Bartley, Buangkok, R
 
 ## Technical Architecture
 
-### Current
+### Current (Polling + Webhook)
 
 ```
-┌─────────────────┐         ┌─────────────────┐
-│   Telegram      │◄───────►│   Bot Server    │
-│   Users         │   API   │   (Python)      │
-└─────────────────┘         └────────┬────────┘
-                                     │
-                            ┌────────▼────────┐
-                            │  SQLite (dev)   │
-                            │  PostgreSQL     │
-                            │  (production)   │
-                            └─────────────────┘
+┌─────────────────┐         ┌──────────────────────┐      ┌─────────────────┐
+│   Telegram      │◄───────►│   Bot Server         │      │  Health Check   │
+│   Users         │  API /  │   (Python)           │      │  HTTP Server    │
+└─────────────────┘ Webhook └───────┬──────────────┘      │  GET /health    │
+                                    │                      └─────────────────┘
+                           ┌────────▼────────┐
+                           │  SQLite (dev)   │     ┌─────────────────┐
+                           │  PostgreSQL     │     │  Sentry         │
+                           │  (production)   │     │  (error track)  │
+                           └─────────────────┘     └─────────────────┘
 ```
+
+Supports both polling (default, for development) and webhook mode (for production).
+Set `WEBHOOK_URL` to enable webhook mode. Structured JSON logging available via `LOG_FORMAT=json`.
 
 ### Future (Scaled)
 
@@ -442,7 +445,11 @@ Hougang, Sengkang, Punggol, Serangoon, Kovan, Potong Pasir, Bartley, Buangkok, R
 | Config | python-dotenv |
 | Database (dev) | SQLite via aiosqlite |
 | Database (prod) | PostgreSQL via asyncpg (connection pooling) |
-| Testing | pytest + pytest-asyncio (105 tests) |
+| Migrations | Alembic (versioned schema changes) |
+| Logging | Structured JSON or human-readable text (`bot/logging_config.py`) |
+| Error Tracking | Sentry (optional, via `sentry-sdk`) |
+| Health Check | Asyncio HTTP server (`GET /health`) |
+| Testing | pytest + pytest-asyncio (127 tests) |
 | Linting | ruff (lint + format) |
 | Type Checking | mypy |
 | CI | GitHub Actions (lint, typecheck, test on 3.10/3.11/3.12) |
@@ -450,7 +457,7 @@ Hougang, Sengkang, Punggol, Serangoon, Kovan, Potong Pasir, Bartley, Buangkok, R
 
 ### Database Schema
 
-Data is stored in 4 tables with 4 indexes. Tables are created automatically on startup via `bot/database.py`.
+Data is stored in 4 tables with 4 indexes. Tables are created automatically on startup via `bot/database.py`. Schema changes are tracked via Alembic migrations in `alembic/versions/`.
 
 ```sql
 -- User accounts and report counts
@@ -556,12 +563,13 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] GitHub Actions CI pipeline: ruff lint/format, mypy type check, pytest across Python 3.10/3.11/3.12
 - [x] Codebase lint cleanup: import sorting, unused variables, `contextlib.suppress` patterns
 
-### Phase 7: Production Infrastructure
-- [ ] Webhook mode for production
-- [ ] Health check endpoint
-- [ ] Structured logging (JSON)
-- [ ] Database migrations (Alembic)
-- [ ] Error tracking (Sentry)
+### Phase 7: Production Infrastructure ✅
+- [x] Webhook mode for production (set `WEBHOOK_URL` to enable)
+- [x] Health check endpoint (`GET /health` with JSON status)
+- [x] Structured logging (JSON via `LOG_FORMAT=json`, text default)
+- [x] Database migrations (Alembic with initial baseline migration)
+- [x] Error tracking (Sentry, optional `sentry-sdk` dependency)
+- [x] 22 new tests for Phase 7 features (127 total)
 
 ### Phase 8: Admin — Foundation & Visibility
 - [ ] Admin authentication (`ADMIN_USER_IDS` env var, `admin_only` decorator)
@@ -605,19 +613,26 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 | File | Purpose |
 |------|---------|
-| `bot/main.py` | Bot logic, handlers, conversation flow (~1420 lines) |
+| `bot/main.py` | Bot logic, handlers, conversation flow, webhook/polling (~1460 lines) |
 | `bot/database.py` | Dual-driver database abstraction (~525 lines) |
+| `bot/health.py` | Health check HTTP server (asyncio, `GET /health`) |
+| `bot/logging_config.py` | Structured logging configuration (text/JSON) |
 | `bot/__init__.py` | Package marker |
-| `config.py` | Environment config and bot settings |
+| `config.py` | Environment config and bot settings (including Phase 7) |
 | `pyproject.toml` | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | Runtime dependencies (legacy compat for platforms without pyproject.toml) |
+| `alembic.ini` | Alembic migration framework configuration |
+| `alembic/env.py` | Alembic environment (reads DATABASE_URL from config.py) |
+| `alembic/script.py.mako` | Alembic migration script template |
+| `alembic/versions/001_initial_schema.py` | Baseline migration matching create_tables() |
 | `tests/conftest.py` | Shared test fixtures (fresh SQLite DB per test) |
 | `tests/test_unit.py` | Unit tests for pure functions (48 tests) |
 | `tests/test_database.py` | Database integration tests (57 tests) |
+| `tests/test_phase7.py` | Phase 7 infrastructure tests (22 tests) |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline (lint + typecheck + test) |
-| `.env.example` | Environment variable template |
+| `.env.example` | Environment variable template (including Phase 7 vars) |
 | `Procfile` | Heroku-style process declaration |
-| `railway.toml` | Railway.app deployment config |
+| `railway.toml` | Railway.app deployment config (with health check) |
 | `runtime.txt` | Python version specification |
 | `README.md` | User-facing documentation |
 | `IMPROVEMENTS.md` | Code review and improvement plan |
