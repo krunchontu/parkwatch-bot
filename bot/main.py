@@ -1,36 +1,58 @@
+import contextlib
 import logging
 import math
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+)
 from telegram.error import Forbidden
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, filters, ContextTypes
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    ConversationHandler,
+    MessageHandler,
+    filters,
+)
+
+from config import (
+    DATABASE_URL,
+    DUPLICATE_RADIUS_METERS,
+    DUPLICATE_WINDOW_MINUTES,
+    FEEDBACK_WINDOW_HOURS,
+    MAX_REPORTS_PER_HOUR,
+    SIGHTING_EXPIRY_MINUTES,
+    SIGHTING_RETENTION_DAYS,
+    TELEGRAM_BOT_TOKEN,
+)
+
+from .database import close_db, get_db, init_db
 
 # Singapore Time (UTC+8)
 SGT = timezone(timedelta(hours=8))
 
-from config import TELEGRAM_BOT_TOKEN, DATABASE_URL, SIGHTING_EXPIRY_MINUTES, MAX_REPORTS_PER_HOUR, DUPLICATE_WINDOW_MINUTES, DUPLICATE_RADIUS_METERS, SIGHTING_RETENTION_DAYS, FEEDBACK_WINDOW_HOURS
-from .database import get_db, init_db, close_db
-
 # Set up logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 def haversine_meters(lat1, lng1, lat2, lng2):
     """Haversine formula — returns distance in meters between two GPS points."""
-    R = 6_371_000  # Earth radius in meters
+    earth_radius = 6_371_000  # Earth radius in meters
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     d_phi = math.radians(lat2 - lat1)
     d_lambda = math.radians(lng2 - lng1)
-    a = (math.sin(d_phi / 2) ** 2
-         + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2)
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return earth_radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 # Zone data - comprehensive Singapore coverage
@@ -38,51 +60,104 @@ ZONES = {
     "central": {
         "name": "Central",
         "zones": [
-            "Tanjong Pagar", "Bugis", "Orchard", "Chinatown", "Clarke Quay",
-            "Raffles Place", "Marina Bay", "City Hall", "Dhoby Ghaut",
-            "Somerset", "Tiong Bahru", "Outram", "Telok Ayer", "Boat Quay",
-            "Robertson Quay", "River Valley"
-        ]
+            "Tanjong Pagar",
+            "Bugis",
+            "Orchard",
+            "Chinatown",
+            "Clarke Quay",
+            "Raffles Place",
+            "Marina Bay",
+            "City Hall",
+            "Dhoby Ghaut",
+            "Somerset",
+            "Tiong Bahru",
+            "Outram",
+            "Telok Ayer",
+            "Boat Quay",
+            "Robertson Quay",
+            "River Valley",
+        ],
     },
     "central_north": {
         "name": "Central North",
         "zones": [
-            "Novena", "Toa Payoh", "Bishan", "Ang Mo Kio", "Marymount",
-            "Caldecott", "Thomson", "Braddell", "Lorong Chuan"
-        ]
+            "Novena",
+            "Toa Payoh",
+            "Bishan",
+            "Ang Mo Kio",
+            "Marymount",
+            "Caldecott",
+            "Thomson",
+            "Braddell",
+            "Lorong Chuan",
+        ],
     },
     "east": {
         "name": "East",
         "zones": [
-            "Tampines", "Bedok", "Paya Lebar", "Katong", "Pasir Ris",
-            "Changi", "Simei", "Eunos", "Kembangan", "Marine Parade",
-            "East Coast", "Geylang", "Aljunied", "Kallang", "Lavender",
-            "Joo Chiat", "Siglap", "Tai Seng", "Ubi", "MacPherson"
-        ]
+            "Tampines",
+            "Bedok",
+            "Paya Lebar",
+            "Katong",
+            "Pasir Ris",
+            "Changi",
+            "Simei",
+            "Eunos",
+            "Kembangan",
+            "Marine Parade",
+            "East Coast",
+            "Geylang",
+            "Aljunied",
+            "Kallang",
+            "Lavender",
+            "Joo Chiat",
+            "Siglap",
+            "Tai Seng",
+            "Ubi",
+            "MacPherson",
+        ],
     },
     "west": {
         "name": "West",
         "zones": [
-            "Jurong East", "Jurong West", "Clementi", "Buona Vista",
-            "Boon Lay", "Pioneer", "Tuas", "Queenstown", "Commonwealth",
-            "HarbourFront", "Telok Blangah", "West Coast", "Dover",
-            "Holland Village", "Ghim Moh", "Lakeside", "Chinese Garden"
-        ]
+            "Jurong East",
+            "Jurong West",
+            "Clementi",
+            "Buona Vista",
+            "Boon Lay",
+            "Pioneer",
+            "Tuas",
+            "Queenstown",
+            "Commonwealth",
+            "HarbourFront",
+            "Telok Blangah",
+            "West Coast",
+            "Dover",
+            "Holland Village",
+            "Ghim Moh",
+            "Lakeside",
+            "Chinese Garden",
+        ],
     },
     "north": {
         "name": "North",
-        "zones": [
-            "Woodlands", "Yishun", "Sembawang", "Admiralty", "Marsiling",
-            "Kranji", "Canberra", "Khatib"
-        ]
+        "zones": ["Woodlands", "Yishun", "Sembawang", "Admiralty", "Marsiling", "Kranji", "Canberra", "Khatib"],
     },
     "northeast": {
         "name": "North-East",
         "zones": [
-            "Hougang", "Sengkang", "Punggol", "Serangoon", "Kovan",
-            "Potong Pasir", "Bartley", "Buangkok", "Rivervale", "Anchorvale"
-        ]
-    }
+            "Hougang",
+            "Sengkang",
+            "Punggol",
+            "Serangoon",
+            "Kovan",
+            "Potong Pasir",
+            "Bartley",
+            "Buangkok",
+            "Rivervale",
+            "Anchorvale",
+        ],
+    },
 }
 
 
@@ -201,25 +276,24 @@ def get_accuracy_indicator(accuracy_score, total_feedback):
         return "❌"  # Low accuracy - possible spammer
 
 
-def build_alert_message(sighting, pos, neg, badge, accuracy_indicator,
-                        feedback_received=False):
+def build_alert_message(sighting, pos, neg, badge, accuracy_indicator, feedback_received=False):
     """Build the full alert message from structured sighting data.
 
     Single source of truth for alert format — used by both the initial
     broadcast and the feedback update path.
     """
-    zone = sighting['zone']
-    reported_at = sighting['reported_at']
-    description = sighting.get('description')
-    lat = sighting.get('lat')
-    lng = sighting.get('lng')
+    zone = sighting["zone"]
+    reported_at = sighting["reported_at"]
+    description = sighting.get("description")
+    lat = sighting.get("lat")
+    lng = sighting.get("lng")
 
     # Convert to SGT for display; reported_at may be naive (UTC) or aware
     if reported_at.tzinfo is None:
         reported_at_sgt = reported_at.replace(tzinfo=timezone.utc).astimezone(SGT)
     else:
         reported_at_sgt = reported_at.astimezone(SGT)
-    time_str = reported_at_sgt.strftime('%I:%M %p SGT')
+    time_str = reported_at_sgt.strftime("%I:%M %p SGT")
 
     msg = f"🚨 WARDEN ALERT — {zone}\n"
     msg += f"🕐 Spotted: {time_str}\n"
@@ -233,8 +307,8 @@ def build_alert_message(sighting, pos, neg, badge, accuracy_indicator,
     else:
         msg += f"👤 Reporter: {badge}\n"
 
-    msg += f"\n⏰ Extend your parking now!\n"
-    msg += f"\n━━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "\n⏰ Extend your parking now!\n"
+    msg += "\n━━━━━━━━━━━━━━━━━━━━━\n"
 
     if feedback_received:
         msg += f"📊 Feedback: 👍 {pos} / 👎 {neg}\n"
@@ -261,11 +335,11 @@ def sanitize_description(text):
         return None
     text = text.strip()
     # Remove control characters (U+0000-U+001F) except newline and tab
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
     # Strip HTML tags
-    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r"<[^>]+>", "", text)
     # Collapse multiple whitespace into single space
-    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r"\s+", " ", text)
     text = text.strip()
     text = text[:100]
     return text if text else None
@@ -293,18 +367,13 @@ async def build_zone_keyboard(region_key, user_id):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
-    user = update.effective_user
-
-    keyboard = [
-        [InlineKeyboardButton(region["name"], callback_data=f"region_{key}")]
-        for key, region in ZONES.items()
-    ]
+    keyboard = [[InlineKeyboardButton(region["name"], callback_data=f"region_{key}")] for key, region in ZONES.items()]
 
     await update.message.reply_text(
-        f"Welcome to ParkWatch SG! 🚗\n\n"
-        f"I'll alert you when parking wardens are spotted nearby.\n\n"
-        f"To get started, which areas do you want alerts for?",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        "Welcome to ParkWatch SG! 🚗\n\n"
+        "I'll alert you when parking wardens are spotted nearby.\n\n"
+        "To get started, which areas do you want alerts for?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -320,12 +389,11 @@ async def handle_region_selection(update: Update, context: ContextTypes.DEFAULT_
         return
 
     user_id = update.effective_user.id
-    context.user_data['current_region'] = region_key
+    context.user_data["current_region"] = region_key
 
     await query.edit_message_text(
-        f"Select zones in {region['name']}:\n\n"
-        f"(Tap to subscribe/unsubscribe, then tap Done)",
-        reply_markup=await build_zone_keyboard(region_key, user_id)
+        f"Select zones in {region['name']}:\n\n(Tap to subscribe/unsubscribe, then tap Done)",
+        reply_markup=await build_zone_keyboard(region_key, user_id),
     )
 
 
@@ -348,7 +416,7 @@ async def handle_zone_selection(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer(f"✅ Subscribed to {zone_name}")
 
     # Rebuild keyboard to show updated status (keeps keyboard open)
-    region_key = context.user_data.get('current_region')
+    region_key = context.user_data.get("current_region")
     if not region_key:
         # Fallback: find which region this zone belongs to
         for key, region in ZONES.items():
@@ -356,12 +424,10 @@ async def handle_zone_selection(update: Update, context: ContextTypes.DEFAULT_TY
                 region_key = key
                 break
 
-    if region_key:
-        region = ZONES.get(region_key)
+    if region_key and region_key in ZONES:
         await query.edit_message_text(
-            f"Select zones in {region['name']}:\n\n"
-            f"(Tap to subscribe/unsubscribe, then tap Done)",
-            reply_markup=await build_zone_keyboard(region_key, user_id)
+            f"Select zones in {ZONES[region_key]['name']}:\n\n(Tap to subscribe/unsubscribe, then tap Done)",
+            reply_markup=await build_zone_keyboard(region_key, user_id),
         )
 
 
@@ -371,7 +437,7 @@ async def handle_zone_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     user_id = update.effective_user.id
-    context.user_data.pop('current_region', None)
+    context.user_data.pop("current_region", None)
 
     subs = await get_db().get_subscriptions(user_id)
     if subs:
@@ -382,10 +448,7 @@ async def handle_zone_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Use /report to report a warden sighting."
         )
     else:
-        await query.edit_message_text(
-            "You're not subscribed to any zones yet.\n"
-            "Use /start to select zones."
-        )
+        await query.edit_message_text("You're not subscribed to any zones yet.\nUse /start to select zones.")
 
 
 async def handle_back_to_regions(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -393,28 +456,16 @@ async def handle_back_to_regions(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
 
-    keyboard = [
-        [InlineKeyboardButton(region["name"], callback_data=f"region_{key}")]
-        for key, region in ZONES.items()
-    ]
+    keyboard = [[InlineKeyboardButton(region["name"], callback_data=f"region_{key}")] for key, region in ZONES.items()]
 
-    await query.edit_message_text(
-        "Which areas do you want alerts for?",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await query.edit_message_text("Which areas do you want alerts for?", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /subscribe command."""
-    keyboard = [
-        [InlineKeyboardButton(region["name"], callback_data=f"region_{key}")]
-        for key, region in ZONES.items()
-    ]
+    keyboard = [[InlineKeyboardButton(region["name"], callback_data=f"region_{key}")] for key, region in ZONES.items()]
 
-    await update.message.reply_text(
-        "Which areas do you want to add?",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await update.message.reply_text("Which areas do you want to add?", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def myzones(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -425,15 +476,10 @@ async def myzones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if subs:
         sub_list = "\n".join(f"• {z}" for z in sorted(subs))
         await update.message.reply_text(
-            f"📍 Your subscribed zones:\n\n{sub_list}\n\n"
-            f"Use /subscribe to add more.\n"
-            f"Use /unsubscribe to remove zones."
+            f"📍 Your subscribed zones:\n\n{sub_list}\n\nUse /subscribe to add more.\nUse /unsubscribe to remove zones."
         )
     else:
-        await update.message.reply_text(
-            "You're not subscribed to any zones yet.\n"
-            "Use /start to select zones."
-        )
+        await update.message.reply_text("You're not subscribed to any zones yet.\nUse /start to select zones.")
 
 
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -442,10 +488,7 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     subs = await get_db().get_subscriptions(user_id)
 
     if not subs:
-        await update.message.reply_text(
-            "You're not subscribed to any zones yet.\n"
-            "Use /start to select zones first."
-        )
+        await update.message.reply_text("You're not subscribed to any zones yet.\nUse /start to select zones first.")
         return
 
     # Build keyboard with current subscriptions
@@ -456,9 +499,8 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("✅ Done", callback_data="unsub_done")])
 
     await update.message.reply_text(
-        f"📍 Your subscribed zones ({len(subs)}):\n\n"
-        f"Tap a zone to unsubscribe:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        f"📍 Your subscribed zones ({len(subs)}):\n\nTap a zone to unsubscribe:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -475,22 +517,15 @@ async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFA
         subs = await db.get_subscriptions(user_id)
         if subs:
             await query.edit_message_text(
-                f"✅ Done! You're subscribed to {len(subs)} zone(s):\n"
-                f"{', '.join(sorted(subs))}"
+                f"✅ Done! You're subscribed to {len(subs)} zone(s):\n{', '.join(sorted(subs))}"
             )
         else:
-            await query.edit_message_text(
-                "You've unsubscribed from all zones.\n"
-                "Use /start to subscribe again."
-            )
+            await query.edit_message_text("You've unsubscribed from all zones.\nUse /start to subscribe again.")
         return
 
     if data == "unsub_all":
         await db.clear_subscriptions(user_id)
-        await query.edit_message_text(
-            "🗑️ Unsubscribed from all zones.\n\n"
-            "Use /start to subscribe to new zones."
-        )
+        await query.edit_message_text("🗑️ Unsubscribed from all zones.\n\nUse /start to subscribe to new zones.")
         return
 
     # Single zone unsubscribe
@@ -501,10 +536,7 @@ async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFA
     subs = await db.get_subscriptions(user_id)
 
     if not subs:
-        await query.edit_message_text(
-            "You've unsubscribed from all zones.\n\n"
-            "Use /start to subscribe to new zones."
-        )
+        await query.edit_message_text("You've unsubscribed from all zones.\n\nUse /start to subscribe to new zones.")
         return
 
     keyboard = []
@@ -514,9 +546,8 @@ async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFA
     keyboard.append([InlineKeyboardButton("✅ Done", callback_data="unsub_done")])
 
     await query.edit_message_text(
-        f"📍 Your subscribed zones ({len(subs)}):\n\n"
-        f"Tap a zone to unsubscribe:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        f"📍 Your subscribed zones ({len(subs)}):\n\nTap a zone to unsubscribe:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -524,14 +555,14 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /report command."""
     keyboard = [
         [InlineKeyboardButton("📍 Share Location", callback_data="report_location")],
-        [InlineKeyboardButton("📝 Select Zone Manually", callback_data="report_manual")]
+        [InlineKeyboardButton("📝 Select Zone Manually", callback_data="report_manual")],
     ]
 
     await update.message.reply_text(
         "📍 Where did you spot the warden?\n\n"
         "Share your location for the most accurate alert, "
         "or select a zone manually.",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
     return CHOOSING_METHOD
 
@@ -542,39 +573,31 @@ async def handle_report_location_button(update: Update, context: ContextTypes.DE
     await query.answer()
 
     # Remove inline buttons from original message
-    await query.edit_message_text(
-        "📍 Tap the button below to share your location."
-    )
+    await query.edit_message_text("📍 Tap the button below to share your location.")
 
     # Send reply keyboard with location button
     location_keyboard = ReplyKeyboardMarkup(
-        [
-            [KeyboardButton("📍 Share my location", request_location=True)],
-            [KeyboardButton("❌ Cancel")]
-        ],
+        [[KeyboardButton("📍 Share my location", request_location=True)], [KeyboardButton("❌ Cancel")]],
         resize_keyboard=True,
-        one_time_keyboard=True
+        one_time_keyboard=True,
     )
 
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text="Use the button below to share your GPS location:",
-        reply_markup=location_keyboard
+        reply_markup=location_keyboard,
     )
     return AWAITING_LOCATION
 
 
 async def handle_location_cancel_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle cancel text from reply keyboard during location sharing."""
-    context.user_data.pop('pending_report_zone', None)
-    context.user_data.pop('pending_report_description', None)
-    context.user_data.pop('pending_report_lat', None)
-    context.user_data.pop('pending_report_lng', None)
+    context.user_data.pop("pending_report_zone", None)
+    context.user_data.pop("pending_report_description", None)
+    context.user_data.pop("pending_report_lat", None)
+    context.user_data.pop("pending_report_lng", None)
 
-    await update.message.reply_text(
-        "❌ Report cancelled.",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    await update.message.reply_text("❌ Report cancelled.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
 
@@ -584,15 +607,11 @@ async def handle_report_manual(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
 
     keyboard = [
-        [InlineKeyboardButton(region["name"], callback_data=f"report_region_{key}")]
-        for key, region in ZONES.items()
+        [InlineKeyboardButton(region["name"], callback_data=f"report_region_{key}")] for key, region in ZONES.items()
     ]
     keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")])
 
-    await query.edit_message_text(
-        "Select a region:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await query.edit_message_text("Select a region:", reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_REGION
 
 
@@ -607,7 +626,7 @@ async def handle_report_region_selection(update: Update, context: ContextTypes.D
     if not region:
         return SELECTING_REGION
 
-    context.user_data['report_region'] = region_key
+    context.user_data["report_region"] = region_key
 
     keyboard = []
     for zone in region["zones"]:
@@ -615,10 +634,7 @@ async def handle_report_region_selection(update: Update, context: ContextTypes.D
     keyboard.append([InlineKeyboardButton("◀ Back to regions", callback_data="report_back_to_regions")])
     keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")])
 
-    await query.edit_message_text(
-        f"Select a zone in {region['name']}:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await query.edit_message_text(f"Select a zone in {region['name']}:", reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_ZONE
 
 
@@ -628,15 +644,11 @@ async def handle_report_back_to_regions(update: Update, context: ContextTypes.DE
     await query.answer()
 
     keyboard = [
-        [InlineKeyboardButton(region["name"], callback_data=f"report_region_{key}")]
-        for key, region in ZONES.items()
+        [InlineKeyboardButton(region["name"], callback_data=f"report_region_{key}")] for key, region in ZONES.items()
     ]
     keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")])
 
-    await query.edit_message_text(
-        "Select a region:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await query.edit_message_text("Select a region:", reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_REGION
 
 
@@ -646,19 +658,21 @@ async def handle_report_zone(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
 
     zone_name = query.data.replace("report_zone_", "")
-    context.user_data['pending_report_zone'] = zone_name
-    context.user_data['pending_report_lat'] = None
-    context.user_data['pending_report_lng'] = None
+    context.user_data["pending_report_zone"] = zone_name
+    context.user_data["pending_report_lat"] = None
+    context.user_data["pending_report_lng"] = None
 
     await query.edit_message_text(
         f"📍 Zone: {zone_name}\n\n"
         f"📝 Send a short description of the location:\n"
         f"(e.g., 'outside Maxwell Food Centre' or 'Block 123 carpark')\n\n"
         f"Or tap Skip to report without description.",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏭️ Skip", callback_data="report_skip_description")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")]
-        ])
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("⏭️ Skip", callback_data="report_skip_description")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")],
+            ]
+        ),
     )
     return AWAITING_DESCRIPTION
 
@@ -668,11 +682,11 @@ async def handle_report_skip_description(update: Update, context: ContextTypes.D
     query = update.callback_query
     await query.answer()
 
-    context.user_data['pending_report_description'] = None
+    context.user_data["pending_report_description"] = None
 
-    zone_name = context.user_data.get('pending_report_zone')
-    lat = context.user_data.get('pending_report_lat')
-    lng = context.user_data.get('pending_report_lng')
+    zone_name = context.user_data.get("pending_report_zone")
+    lat = context.user_data.get("pending_report_lat")
+    lng = context.user_data.get("pending_report_lng")
 
     confirm_text = f"⚠️ Confirm warden sighting:\n\n📍 Zone: {zone_name}"
     if lat and lng:
@@ -680,10 +694,12 @@ async def handle_report_skip_description(update: Update, context: ContextTypes.D
 
     await query.edit_message_text(
         confirm_text,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm", callback_data="report_confirm")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")]
-        ])
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("✅ Confirm", callback_data="report_confirm")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")],
+            ]
+        ),
     )
     return CONFIRMING
 
@@ -694,17 +710,19 @@ async def handle_description_input(update: Update, context: ContextTypes.DEFAULT
     if description is None:
         await update.message.reply_text(
             "That description was empty after cleanup. Please try again, or tap Skip.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⏭️ Skip", callback_data="report_skip_description")],
-                [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")]
-            ])
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("⏭️ Skip", callback_data="report_skip_description")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")],
+                ]
+            ),
         )
         return AWAITING_DESCRIPTION
-    context.user_data['pending_report_description'] = description
+    context.user_data["pending_report_description"] = description
 
-    zone_name = context.user_data.get('pending_report_zone')
-    lat = context.user_data.get('pending_report_lat')
-    lng = context.user_data.get('pending_report_lng')
+    zone_name = context.user_data.get("pending_report_zone")
+    lat = context.user_data.get("pending_report_lat")
+    lng = context.user_data.get("pending_report_lng")
 
     confirm_text = f"⚠️ Confirm warden sighting:\n\n📍 Zone: {zone_name}\n📝 Location: {description}"
     if lat and lng:
@@ -712,10 +730,12 @@ async def handle_description_input(update: Update, context: ContextTypes.DEFAULT
 
     await update.message.reply_text(
         confirm_text,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm", callback_data="report_confirm")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")]
-        ])
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("✅ Confirm", callback_data="report_confirm")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")],
+            ]
+        ),
     )
     return CONFIRMING
 
@@ -725,7 +745,7 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
 
-    zone_name = context.user_data.get('pending_report_zone')
+    zone_name = context.user_data.get("pending_report_zone")
     if not zone_name:
         await query.edit_message_text("❌ Report expired. Please start again with /report")
         return ConversationHandler.END
@@ -752,22 +772,21 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
 
     # --- Duplicate detection (GPS-aware) ---
-    lat = context.user_data.get('pending_report_lat')
-    lng = context.user_data.get('pending_report_lng')
+    lat = context.user_data.get("pending_report_lat")
+    lng = context.user_data.get("pending_report_lng")
     recent_sightings = await db.find_recent_zone_sightings(zone_name, DUPLICATE_WINDOW_MINUTES)
 
     for existing in recent_sightings:
-        existing_lat = existing.get('lat')
-        existing_lng = existing.get('lng')
-        has_both_gps = (lat is not None and lng is not None
-                        and existing_lat is not None and existing_lng is not None)
+        existing_lat = existing.get("lat")
+        existing_lng = existing.get("lng")
+        has_both_gps = lat is not None and lng is not None and existing_lat is not None and existing_lng is not None
 
         if has_both_gps:
             dist = haversine_meters(lat, lng, existing_lat, existing_lng)
             if dist > DUPLICATE_RADIUS_METERS:
                 continue  # Far enough apart — not a duplicate
             # Within radius — duplicate
-            mins_ago = int((now - existing['reported_at']).total_seconds() / 60)
+            mins_ago = int((now - existing["reported_at"]).total_seconds() / 60)
             await query.edit_message_text(
                 f"⚠️ Duplicate report.\n\n"
                 f"A warden was already reported nearby ({int(dist)}m away) "
@@ -777,7 +796,7 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
             return ConversationHandler.END
         else:
             # No GPS on one or both — fall back to zone-level duplicate
-            mins_ago = int((now - existing['reported_at']).total_seconds() / 60)
+            mins_ago = int((now - existing["reported_at"]).total_seconds() / 60)
             await query.edit_message_text(
                 f"⚠️ Duplicate report.\n\n"
                 f"A warden was already reported in {zone_name} "
@@ -798,42 +817,50 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     accuracy_indicator = get_accuracy_indicator(accuracy_score, total_feedback)
 
     # Get report details
-    description = context.user_data.get('pending_report_description')
+    description = context.user_data.get("pending_report_description")
 
     # Generate unique sighting ID
     sighting_id = generate_sighting_id()
 
     # Store sighting
     sighting = {
-        'id': sighting_id,
-        'zone': zone_name,
-        'description': description,
-        'time': now,
-        'reporter_id': user_id,
-        'reporter_name': username,
-        'reporter_badge': badge,
-        'lat': lat,
-        'lng': lng,
+        "id": sighting_id,
+        "zone": zone_name,
+        "description": description,
+        "time": now,
+        "reporter_id": user_id,
+        "reporter_name": username,
+        "reporter_badge": badge,
+        "lat": lat,
+        "lng": lng,
     }
     await db.add_sighting(sighting)
 
     # Build broadcast message from structured data
     sighting_for_msg = {
-        'zone': zone_name, 'reported_at': now, 'description': description,
-        'lat': lat, 'lng': lng,
+        "zone": zone_name,
+        "reported_at": now,
+        "description": description,
+        "lat": lat,
+        "lng": lng,
     }
     alert_msg = build_alert_message(
-        sighting_for_msg, pos=0, neg=0,
-        badge=badge, accuracy_indicator=accuracy_indicator,
+        sighting_for_msg,
+        pos=0,
+        neg=0,
+        badge=badge,
+        accuracy_indicator=accuracy_indicator,
     )
 
     # Feedback buttons
-    feedback_keyboard = InlineKeyboardMarkup([
+    feedback_keyboard = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("👍 Warden was there", callback_data=f"feedback_pos_{sighting_id}"),
-            InlineKeyboardButton("👎 False alarm", callback_data=f"feedback_neg_{sighting_id}")
+            [
+                InlineKeyboardButton("👍 Warden was there", callback_data=f"feedback_pos_{sighting_id}"),
+                InlineKeyboardButton("👎 False alarm", callback_data=f"feedback_neg_{sighting_id}"),
+            ]
         ]
-    ])
+    )
 
     subscribers = await db.get_zone_subscribers(zone_name)
     sent_count = 0
@@ -844,11 +871,7 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
         if uid == user_id:
             continue
         try:
-            await context.bot.send_message(
-                chat_id=uid,
-                text=alert_msg,
-                reply_markup=feedback_keyboard
-            )
+            await context.bot.send_message(chat_id=uid, text=alert_msg, reply_markup=feedback_keyboard)
             sent_count += 1
         except Forbidden:
             logger.warning(f"User {uid} blocked the bot — removing subscriptions")
@@ -870,21 +893,18 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
         confirm_msg += f"\n⚠️ {failed_count} delivery failure(s)."
         if blocked_users:
             confirm_msg += f" ({len(blocked_users)} inactive user(s) cleaned up.)"
-    confirm_msg += (
-        f"\n\n🏆 You've reported {report_count} sighting(s)!\n"
-        f"Your badge: {badge}\n"
-    )
+    confirm_msg += f"\n\n🏆 You've reported {report_count} sighting(s)!\nYour badge: {badge}\n"
     if total_feedback > 0:
-        confirm_msg += f"Your accuracy: {accuracy_score*100:.0f}% ({total_feedback} ratings)"
+        confirm_msg += f"Your accuracy: {accuracy_score * 100:.0f}% ({total_feedback} ratings)"
     else:
         confirm_msg += "Your accuracy: No ratings yet"
     await query.edit_message_text(confirm_msg)
 
     # Clear pending report data
-    context.user_data.pop('pending_report_zone', None)
-    context.user_data.pop('pending_report_description', None)
-    context.user_data.pop('pending_report_lat', None)
-    context.user_data.pop('pending_report_lng', None)
+    context.user_data.pop("pending_report_zone", None)
+    context.user_data.pop("pending_report_description", None)
+    context.user_data.pop("pending_report_lat", None)
+    context.user_data.pop("pending_report_lng", None)
     return ConversationHandler.END
 
 
@@ -892,25 +912,22 @@ async def handle_report_cancel(update: Update, context: ContextTypes.DEFAULT_TYP
     """Cancel report via inline button."""
     query = update.callback_query
     await query.answer()
-    context.user_data.pop('pending_report_zone', None)
-    context.user_data.pop('pending_report_description', None)
-    context.user_data.pop('pending_report_lat', None)
-    context.user_data.pop('pending_report_lng', None)
+    context.user_data.pop("pending_report_zone", None)
+    context.user_data.pop("pending_report_description", None)
+    context.user_data.pop("pending_report_lat", None)
+    context.user_data.pop("pending_report_lng", None)
     await query.edit_message_text("❌ Report cancelled.")
     return ConversationHandler.END
 
 
 async def cancel_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /cancel command during report flow."""
-    context.user_data.pop('pending_report_zone', None)
-    context.user_data.pop('pending_report_description', None)
-    context.user_data.pop('pending_report_lat', None)
-    context.user_data.pop('pending_report_lng', None)
+    context.user_data.pop("pending_report_zone", None)
+    context.user_data.pop("pending_report_description", None)
+    context.user_data.pop("pending_report_lat", None)
+    context.user_data.pop("pending_report_lng", None)
 
-    await update.message.reply_text(
-        "❌ Report cancelled.",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    await update.message.reply_text("❌ Report cancelled.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
 
@@ -928,10 +945,8 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     reporter_id = await db.get_sighting_reporter(sighting_id)
     if reporter_id is None:
         await query.answer("This sighting has expired.", show_alert=True)
-        try:
+        with contextlib.suppress(Exception):
             await query.edit_message_reply_markup(reply_markup=None)
-        except Exception:
-            pass
         return
     if reporter_id == user_id:
         await query.answer("You cannot rate your own sighting.", show_alert=True)
@@ -940,7 +955,7 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     # --- Feedback window check ---
     sighting_data = await db.get_sighting(sighting_id)
     if sighting_data:
-        reported_at = sighting_data['reported_at']
+        reported_at = sighting_data["reported_at"]
         if reported_at.tzinfo is None:
             reported_at = reported_at.replace(tzinfo=timezone.utc)
         sighting_age = datetime.now(timezone.utc) - reported_at
@@ -949,14 +964,12 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
                 f"Feedback window has closed ({FEEDBACK_WINDOW_HOURS}h limit).",
                 show_alert=True,
             )
-            try:
+            with contextlib.suppress(Exception):
                 await query.edit_message_reply_markup(reply_markup=None)
-            except Exception:
-                pass
             return
 
     # Apply feedback in a single transaction (read→upsert→update counts)
-    new_vote = 'positive' if is_positive else 'negative'
+    new_vote = "positive" if is_positive else "negative"
     try:
         sighting = await db.apply_feedback(sighting_id, user_id, new_vote)
     except ValueError:
@@ -967,8 +980,8 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
         await query.answer("This sighting has expired.", show_alert=True)
         return
 
-    pos = sighting['feedback_positive']
-    neg = sighting['feedback_negative']
+    pos = sighting["feedback_positive"]
+    neg = sighting["feedback_negative"]
 
     # Update the message to show feedback was recorded
     if is_positive:
@@ -978,22 +991,27 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
 
     # Rebuild message from structured DB data (no string parsing)
     try:
-        badge = sighting.get('reporter_badge', '🆕 New')
-        acc_score, total_fb = await db.calculate_accuracy(sighting['reporter_id'])
+        badge = sighting.get("reporter_badge", "🆕 New")
+        acc_score, total_fb = await db.calculate_accuracy(sighting["reporter_id"])
         accuracy_ind = get_accuracy_indicator(acc_score, total_fb)
 
         new_text = build_alert_message(
-            sighting, pos=pos, neg=neg,
-            badge=badge, accuracy_indicator=accuracy_ind,
+            sighting,
+            pos=pos,
+            neg=neg,
+            badge=badge,
+            accuracy_indicator=accuracy_ind,
             feedback_received=True,
         )
 
-        feedback_keyboard = InlineKeyboardMarkup([
+        feedback_keyboard = InlineKeyboardMarkup(
             [
-                InlineKeyboardButton(f"👍 Accurate ({pos})", callback_data=f"feedback_pos_{sighting_id}"),
-                InlineKeyboardButton(f"👎 False alarm ({neg})", callback_data=f"feedback_neg_{sighting_id}")
+                [
+                    InlineKeyboardButton(f"👍 Accurate ({pos})", callback_data=f"feedback_pos_{sighting_id}"),
+                    InlineKeyboardButton(f"👎 False alarm ({neg})", callback_data=f"feedback_neg_{sighting_id}"),
+                ]
             ]
-        ])
+        )
 
         await query.edit_message_text(text=new_text, reply_markup=feedback_keyboard)
     except Exception as e:
@@ -1009,25 +1027,18 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_zones = await db.get_subscriptions(user_id)
     except Exception as e:
         logger.error(f"DB error in /recent (get_subscriptions): {e}")
-        await update.message.reply_text(
-            "Sorry, something went wrong fetching your zones. Please try again."
-        )
+        await update.message.reply_text("Sorry, something went wrong fetching your zones. Please try again.")
         return
 
     if not user_zones:
-        await update.message.reply_text(
-            "You're not subscribed to any zones yet.\n"
-            "Use /start to select zones first."
-        )
+        await update.message.reply_text("You're not subscribed to any zones yet.\nUse /start to select zones first.")
         return
 
     try:
         relevant = await db.get_recent_sightings_for_zones(user_zones, SIGHTING_EXPIRY_MINUTES)
     except Exception as e:
         logger.error(f"DB error in /recent (get_recent_sightings): {e}")
-        await update.message.reply_text(
-            "Sorry, something went wrong fetching recent sightings. Please try again."
-        )
+        await update.message.reply_text("Sorry, something went wrong fetching recent sightings. Please try again.")
         return
 
     if not relevant:
@@ -1040,7 +1051,7 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📋 Recent sightings in your zones:\n"
 
     for s in relevant:  # already sorted by reported_at DESC from DB
-        reported_at = s['reported_at']
+        reported_at = s["reported_at"]
         if reported_at.tzinfo is None:
             reported_at = reported_at.replace(tzinfo=timezone.utc)
         mins_ago = int((datetime.now(timezone.utc) - reported_at).total_seconds() / 60)
@@ -1055,15 +1066,15 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         msg += f"\n{urgency} {s['zone']} — {mins_ago} mins ago\n"
 
-        if s.get('description'):
+        if s.get("description"):
             msg += f"   📝 {s['description']}\n"
 
-        if s.get('lat') and s.get('lng'):
+        if s.get("lat") and s.get("lng"):
             msg += f"   🌐 GPS: {s['lat']:.6f}, {s['lng']:.6f}\n"
 
         # Get reporter's current accuracy
-        reporter_id = s.get('reporter_id')
-        badge = s.get('reporter_badge', '🆕 New')
+        reporter_id = s.get("reporter_id")
+        badge = s.get("reporter_badge", "🆕 New")
         accuracy_indicator = ""
         if reporter_id:
             acc_score, total_fb = await db.calculate_accuracy(reporter_id)
@@ -1075,8 +1086,8 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"   👤 {badge}\n"
 
         # Feedback stats
-        pos = s.get('feedback_positive', 0)
-        neg = s.get('feedback_negative', 0)
+        pos = s.get("feedback_positive", 0)
+        neg = s.get("feedback_negative", 0)
         if pos > 0 or neg > 0:
             msg += f"   📊 Feedback: 👍 {pos} / 👎 {neg}\n"
 
@@ -1104,7 +1115,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Spot a warden? Use /report to alert others!\n"
         "• Rate alerts with 👍/👎 to build trust\n"
         "• Share with friends — more users = better alerts!",
-        parse_mode='Markdown'
+        parse_mode="Markdown",
     )
 
 
@@ -1114,16 +1125,16 @@ async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = get_db()
 
     stats = await db.get_user_stats(user_id)
-    if not stats or stats['report_count'] == 0:
+    if not stats or stats["report_count"] == 0:
         await update.message.reply_text(
             "📊 *Your Reporter Stats*\n\n"
             "You haven't reported any sightings yet.\n"
             "Use /report when you spot a warden to get started!",
-            parse_mode='Markdown'
+            parse_mode="Markdown",
         )
         return
 
-    report_count = stats['report_count']
+    report_count = stats["report_count"]
     accuracy_score, total_feedback = await db.calculate_accuracy(user_id)
 
     badge = get_reporter_badge(report_count)
@@ -1135,12 +1146,12 @@ async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📊 *Your Reporter Stats*\n\n"
     msg += f"🏆 Badge: {badge}\n"
     msg += f"📝 Total reports: {report_count}\n"
-    msg += f"\n*Accuracy Rating:*\n"
+    msg += "\n*Accuracy Rating:*\n"
     msg += f"👍 Positive: {total_pos}\n"
     msg += f"👎 Negative: {total_neg}\n"
 
     if total_feedback >= 3:
-        msg += f"\n✨ Accuracy score: {accuracy_score*100:.0f}%"
+        msg += f"\n✨ Accuracy score: {accuracy_score * 100:.0f}%"
         if accuracy_indicator:
             msg += f" {accuracy_indicator}"
         msg += "\n"
@@ -1164,7 +1175,7 @@ async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += "⚠️ 50-79% — Mixed accuracy\n"
     msg += "❌ <50% — Low accuracy\n"
 
-    await update.message.reply_text(msg, parse_mode='Markdown')
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 
 async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1172,19 +1183,10 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_info = await context.bot.get_me()
     bot_username = bot_info.username
 
-    # Get user's stats for personalized message
-    user_id = update.effective_user.id
     user_name = update.effective_user.first_name or "A friend"
-    db = get_db()
 
-    report_count = 0
-    stats = await db.get_user_stats(user_id)
-    if stats:
-        report_count = stats['report_count']
-
-    # Count total active users and sightings
-    total_users = await db.get_subscriber_count()
-    total_sightings = await db.get_total_sightings_count()
+    # Count total active users
+    total_users = await get_db().get_subscriber_count()
 
     if total_users >= 10:
         user_line = f"Join {total_users}+ drivers getting real-time warden alerts!"
@@ -1215,11 +1217,11 @@ _Shared by {user_name}_"""
         "📤 *Share ParkWatch SG*\n\n"
         "Forward the message below to your friends, family, or driver groups!\n\n"
         "The more users we have, the better the alerts work for everyone.",
-        parse_mode='Markdown'
+        parse_mode="Markdown",
     )
 
     # Send the actual share message (easy to forward)
-    await update.message.reply_text(share_msg, parse_mode='Markdown')
+    await update.message.reply_text(share_msg, parse_mode="Markdown")
 
     # Tips for sharing
     await update.message.reply_text(
@@ -1229,7 +1231,7 @@ _Shared by {user_name}_"""
         "• Facebook driver groups\n"
         "• Colleagues who drive to work\n\n"
         "Every new user makes the network stronger! 💪",
-        parse_mode='Markdown'
+        parse_mode="Markdown",
     )
 
 
@@ -1261,7 +1263,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Find nearest zone using module-level ZONE_COORDS
     nearest_zone = None
-    min_dist = float('inf')
+    min_dist = float("inf")
 
     for zone_name, (zone_lat, zone_lng) in ZONE_COORDS.items():
         dist = haversine_meters(lat, lng, zone_lat, zone_lng)
@@ -1270,43 +1272,43 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
             nearest_zone = zone_name
 
     # Store zone and coordinates
-    context.user_data['pending_report_zone'] = nearest_zone
-    context.user_data['pending_report_lat'] = lat
-    context.user_data['pending_report_lng'] = lng
+    context.user_data["pending_report_zone"] = nearest_zone
+    context.user_data["pending_report_lat"] = lat
+    context.user_data["pending_report_lng"] = lng
 
     # Check if within reasonable range (2km)
     if min_dist > 2000:
         await update.message.reply_text(
-            f"📍 You're a bit far from known zones.\n"
-            f"Nearest zone: {nearest_zone}\n"
-            f"🌐 GPS: {lat:.6f}, {lng:.6f}",
-            reply_markup=ReplyKeyboardRemove()
+            f"📍 You're a bit far from known zones.\nNearest zone: {nearest_zone}\n🌐 GPS: {lat:.6f}, {lng:.6f}",
+            reply_markup=ReplyKeyboardRemove(),
         )
         await update.message.reply_text(
-            f"📝 Send a short description of the location:\n"
-            f"(e.g., 'outside Maxwell Food Centre')\n\n"
-            f"Or tap Skip to continue without description.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⏭️ Skip", callback_data="report_skip_description")],
-                [InlineKeyboardButton("📝 Select different zone", callback_data="report_manual")],
-                [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")]
-            ])
+            "📝 Send a short description of the location:\n"
+            "(e.g., 'outside Maxwell Food Centre')\n\n"
+            "Or tap Skip to continue without description.",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("⏭️ Skip", callback_data="report_skip_description")],
+                    [InlineKeyboardButton("📝 Select different zone", callback_data="report_manual")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")],
+                ]
+            ),
         )
         return AWAITING_DESCRIPTION
 
     await update.message.reply_text(
-        f"📍 Detected zone: {nearest_zone}\n"
-        f"🌐 GPS: {lat:.6f}, {lng:.6f}",
-        reply_markup=ReplyKeyboardRemove()
+        f"📍 Detected zone: {nearest_zone}\n🌐 GPS: {lat:.6f}, {lng:.6f}", reply_markup=ReplyKeyboardRemove()
     )
     await update.message.reply_text(
-        f"📝 Send a short description of the location:\n"
-        f"(e.g., 'outside Maxwell Food Centre' or 'Block 123 carpark')\n\n"
-        f"Or tap Skip to report without description.",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏭️ Skip", callback_data="report_skip_description")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")]
-        ])
+        "📝 Send a short description of the location:\n"
+        "(e.g., 'outside Maxwell Food Centre' or 'Block 123 carpark')\n\n"
+        "Or tap Skip to report without description.",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("⏭️ Skip", callback_data="report_skip_description")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="report_cancel")],
+            ]
+        ),
     )
     return AWAITING_DESCRIPTION
 
@@ -1315,13 +1317,11 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     """Global error handler — logs the full traceback and notifies the user."""
     logger.error("Unhandled exception:", exc_info=context.error)
     if update and isinstance(update, Update) and update.effective_chat:
-        try:
+        with contextlib.suppress(Exception):
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text="Sorry, something went wrong. Please try again later.",
             )
-        except Exception:
-            pass
 
 
 async def cleanup_job(context: ContextTypes.DEFAULT_TYPE):
@@ -1349,13 +1349,7 @@ def main():
         return
 
     # Create application with lifecycle hooks
-    app = (
-        Application.builder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .post_init(post_init)
-        .post_shutdown(post_shutdown)
-        .build()
-    )
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
 
     # ConversationHandler for report flow
     report_conv = ConversationHandler(

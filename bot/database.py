@@ -21,7 +21,7 @@ def get_db() -> "Database":
     return _db
 
 
-async def init_db(database_url: Optional[str] = None) -> "Database":
+async def init_db(database_url: str | None = None) -> "Database":
     """Initialize the database connection and create tables."""
     global _db
     db = Database(database_url)
@@ -44,11 +44,11 @@ async def close_db():
 class Database:
     """Dual-driver database abstraction (SQLite / PostgreSQL)."""
 
-    def __init__(self, database_url: Optional[str] = None):
+    def __init__(self, database_url: str | None = None):
         self.database_url = database_url
         self.driver: str = "sqlite"
-        self._conn = None   # aiosqlite connection
-        self._pool = None   # asyncpg pool
+        self._conn = None  # aiosqlite connection
+        self._pool = None  # asyncpg pool
 
         if database_url and database_url.startswith(("postgresql://", "postgres://")):
             self.driver = "postgresql"
@@ -63,10 +63,11 @@ class Database:
         """Open the database connection."""
         if self.driver == "sqlite":
             import aiosqlite
+
             db_path = "parkwatch.db"
             if self.database_url:
                 if self.database_url.startswith("sqlite:///"):
-                    db_path = self.database_url[len("sqlite:///"):]
+                    db_path = self.database_url[len("sqlite:///") :]
                 elif not self.database_url.startswith(("postgresql://", "postgres://")):
                     db_path = self.database_url
             sqlite3.register_adapter(datetime, lambda d: d.isoformat())
@@ -78,9 +79,8 @@ class Database:
             await self._conn.commit()
         else:
             import asyncpg
-            self._pool = await asyncpg.create_pool(
-                self.database_url, min_size=2, max_size=10
-            )
+
+            self._pool = await asyncpg.create_pool(self.database_url, min_size=2, max_size=10)
 
     async def close(self):
         """Close the database connection."""
@@ -100,7 +100,7 @@ class Database:
             async with self._pool.acquire() as conn:
                 await conn.execute(sql, *params)
 
-    async def _fetchone(self, sql: str, params: tuple = ()) -> Optional[dict]:
+    async def _fetchone(self, sql: str, params: tuple = ()) -> dict | None:
         """Execute a query and return a single row as dict, or None."""
         if self.driver == "sqlite":
             cursor = await self._conn.execute(sql, params)
@@ -172,8 +172,7 @@ class Database:
     async def get_subscriptions(self, user_id: int) -> set[str]:
         """Get all zone names a user is subscribed to."""
         rows = await self._fetchall(
-            f"SELECT zone_name FROM subscriptions WHERE telegram_id = {self._ph(1)}",
-            (user_id,)
+            f"SELECT zone_name FROM subscriptions WHERE telegram_id = {self._ph(1)}", (user_id,)
         )
         return {r["zone_name"] for r in rows}
 
@@ -181,43 +180,33 @@ class Database:
         """Subscribe a user to a zone (idempotent)."""
         if self.driver == "sqlite":
             await self._execute(
-                "INSERT OR IGNORE INTO subscriptions (telegram_id, zone_name) VALUES (?, ?)",
-                (user_id, zone)
+                "INSERT OR IGNORE INTO subscriptions (telegram_id, zone_name) VALUES (?, ?)", (user_id, zone)
             )
         else:
             await self._execute(
-                "INSERT INTO subscriptions (telegram_id, zone_name) VALUES ($1, $2) "
-                "ON CONFLICT DO NOTHING",
-                (user_id, zone)
+                "INSERT INTO subscriptions (telegram_id, zone_name) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                (user_id, zone),
             )
 
     async def remove_subscription(self, user_id: int, zone: str) -> None:
         """Unsubscribe a user from a single zone."""
         await self._execute(
             f"DELETE FROM subscriptions WHERE telegram_id = {self._ph(1)} AND zone_name = {self._ph(2)}",
-            (user_id, zone)
+            (user_id, zone),
         )
 
     async def clear_subscriptions(self, user_id: int) -> None:
         """Remove all subscriptions for a user."""
-        await self._execute(
-            f"DELETE FROM subscriptions WHERE telegram_id = {self._ph(1)}",
-            (user_id,)
-        )
+        await self._execute(f"DELETE FROM subscriptions WHERE telegram_id = {self._ph(1)}", (user_id,))
 
     async def get_zone_subscribers(self, zone: str) -> list[int]:
         """Get all telegram_ids subscribed to a zone (for broadcast)."""
-        rows = await self._fetchall(
-            f"SELECT telegram_id FROM subscriptions WHERE zone_name = {self._ph(1)}",
-            (zone,)
-        )
+        rows = await self._fetchall(f"SELECT telegram_id FROM subscriptions WHERE zone_name = {self._ph(1)}", (zone,))
         return [r["telegram_id"] for r in rows]
 
     async def get_subscriber_count(self) -> int:
         """Count distinct subscribed users."""
-        row = await self._fetchone(
-            "SELECT COUNT(DISTINCT telegram_id) AS cnt FROM subscriptions"
-        )
+        row = await self._fetchone("SELECT COUNT(DISTINCT telegram_id) AS cnt FROM subscriptions")
         return row["cnt"] if row else 0
 
     # --- Users ---
@@ -228,38 +217,30 @@ class Database:
             await self._execute(
                 "INSERT INTO users (telegram_id, username) VALUES (?, ?) "
                 "ON CONFLICT(telegram_id) DO UPDATE SET username = excluded.username",
-                (user_id, username)
+                (user_id, username),
             )
         else:
             await self._execute(
                 "INSERT INTO users (telegram_id, username) VALUES ($1, $2) "
                 "ON CONFLICT (telegram_id) DO UPDATE SET username = EXCLUDED.username",
-                (user_id, username)
+                (user_id, username),
             )
 
-    async def get_user_stats(self, user_id: int) -> Optional[dict]:
+    async def get_user_stats(self, user_id: int) -> dict | None:
         """Get user row (telegram_id, username, report_count)."""
         return await self._fetchone(
-            f"SELECT telegram_id, username, report_count FROM users WHERE telegram_id = {self._ph(1)}",
-            (user_id,)
+            f"SELECT telegram_id, username, report_count FROM users WHERE telegram_id = {self._ph(1)}", (user_id,)
         )
 
     async def increment_report_count(self, user_id: int) -> int:
         """Increment report_count and return new value."""
         if self.driver == "sqlite":
-            await self._execute(
-                "UPDATE users SET report_count = report_count + 1 WHERE telegram_id = ?",
-                (user_id,)
-            )
-            row = await self._fetchone(
-                "SELECT report_count FROM users WHERE telegram_id = ?",
-                (user_id,)
-            )
+            await self._execute("UPDATE users SET report_count = report_count + 1 WHERE telegram_id = ?", (user_id,))
+            row = await self._fetchone("SELECT report_count FROM users WHERE telegram_id = ?", (user_id,))
         else:
             row = await self._fetchone(
-                "UPDATE users SET report_count = report_count + 1 WHERE telegram_id = $1 "
-                "RETURNING report_count",
-                (user_id,)
+                "UPDATE users SET report_count = report_count + 1 WHERE telegram_id = $1 RETURNING report_count",
+                (user_id,),
             )
         return row["report_count"] if row else 0
 
@@ -274,11 +255,18 @@ class Database:
                 VALUES ({ph(1)}, {ph(2)}, {ph(3)}, {ph(4)}, {ph(5)},
                         {ph(6)}, {ph(7)}, {ph(8)}, {ph(9)}, {ph(10)}, {ph(11)})""",
             (
-                sighting["id"], sighting["zone"], sighting.get("description"),
-                sighting["time"], sighting["reporter_id"], sighting["reporter_name"],
-                sighting["reporter_badge"], sighting.get("lat"), sighting.get("lng"),
-                0, 0
-            )
+                sighting["id"],
+                sighting["zone"],
+                sighting.get("description"),
+                sighting["time"],
+                sighting["reporter_id"],
+                sighting["reporter_name"],
+                sighting["reporter_badge"],
+                sighting.get("lat"),
+                sighting.get("lng"),
+                0,
+                0,
+            ),
         )
 
     async def get_recent_sightings_for_zones(self, zones: set[str], expiry_minutes: int) -> list[dict]:
@@ -289,14 +277,17 @@ class Database:
         zone_list = list(zones)
         if self.driver == "sqlite":
             placeholders = ", ".join("?" for _ in zone_list)
-            sql = (f"SELECT * FROM sightings WHERE zone IN ({placeholders}) "
-                   f"AND reported_at > ? ORDER BY reported_at DESC")
+            sql = (
+                f"SELECT * FROM sightings WHERE zone IN ({placeholders}) AND reported_at > ? ORDER BY reported_at DESC"
+            )
             params = (*zone_list, cutoff)
         else:
             placeholders = ", ".join(f"${i}" for i in range(1, len(zone_list) + 1))
             n = len(zone_list) + 1
-            sql = (f"SELECT * FROM sightings WHERE zone IN ({placeholders}) "
-                   f"AND reported_at > ${n} ORDER BY reported_at DESC")
+            sql = (
+                f"SELECT * FROM sightings WHERE zone IN ({placeholders}) "
+                f"AND reported_at > ${n} ORDER BY reported_at DESC"
+            )
             params = (*zone_list, cutoff)
         return await self._fetchall(sql, params)
 
@@ -306,22 +297,22 @@ class Database:
         return await self._fetchall(
             f"SELECT * FROM sightings WHERE zone = {self._ph(1)} AND reported_at > {self._ph(2)} "
             f"ORDER BY reported_at DESC",
-            (zone, cutoff)
+            (zone, cutoff),
         )
 
     async def count_reports_since(self, user_id: int, since: datetime) -> int:
         """Count how many reports a user has submitted since a given time."""
         row = await self._fetchone(
             f"SELECT COUNT(*) AS cnt FROM sightings WHERE reporter_id = {self._ph(1)} AND reported_at > {self._ph(2)}",
-            (user_id, since)
+            (user_id, since),
         )
         return row["cnt"] if row else 0
 
-    async def get_oldest_report_since(self, user_id: int, since: datetime) -> Optional[datetime]:
+    async def get_oldest_report_since(self, user_id: int, since: datetime) -> datetime | None:
         """Get the oldest report timestamp since a given time (for rate-limit wait calculation)."""
         row = await self._fetchone(
             f"SELECT MIN(reported_at) AS oldest FROM sightings WHERE reporter_id = {self._ph(1)} AND reported_at > {self._ph(2)}",
-            (user_id, since)
+            (user_id, since),
         )
         if row and row["oldest"]:
             return row["oldest"]
@@ -333,22 +324,16 @@ class Database:
             f"UPDATE sightings SET feedback_positive = feedback_positive + {self._ph(1)}, "
             f"feedback_negative = feedback_negative + {self._ph(2)} "
             f"WHERE id = {self._ph(3)}",
-            (positive_delta, negative_delta, sighting_id)
+            (positive_delta, negative_delta, sighting_id),
         )
 
-    async def get_sighting(self, sighting_id: str) -> Optional[dict]:
+    async def get_sighting(self, sighting_id: str) -> dict | None:
         """Fetch a single sighting by ID."""
-        return await self._fetchone(
-            f"SELECT * FROM sightings WHERE id = {self._ph(1)}",
-            (sighting_id,)
-        )
+        return await self._fetchone(f"SELECT * FROM sightings WHERE id = {self._ph(1)}", (sighting_id,))
 
-    async def get_sighting_reporter(self, sighting_id: str) -> Optional[int]:
+    async def get_sighting_reporter(self, sighting_id: str) -> int | None:
         """Get reporter_id for a sighting (for self-rating prevention)."""
-        row = await self._fetchone(
-            f"SELECT reporter_id FROM sightings WHERE id = {self._ph(1)}",
-            (sighting_id,)
-        )
+        row = await self._fetchone(f"SELECT reporter_id FROM sightings WHERE id = {self._ph(1)}", (sighting_id,))
         return row["reporter_id"] if row else None
 
     async def get_total_sightings_count(self) -> int:
@@ -362,40 +347,32 @@ class Database:
         if self.driver == "sqlite":
             # Delete related feedback first
             await self._conn.execute(
-                "DELETE FROM feedback WHERE sighting_id IN "
-                "(SELECT id FROM sightings WHERE reported_at < ?)",
-                (cutoff,)
+                "DELETE FROM feedback WHERE sighting_id IN (SELECT id FROM sightings WHERE reported_at < ?)", (cutoff,)
             )
-            cursor = await self._conn.execute(
-                "DELETE FROM sightings WHERE reported_at < ?", (cutoff,)
-            )
+            cursor = await self._conn.execute("DELETE FROM sightings WHERE reported_at < ?", (cutoff,))
             count = cursor.rowcount
             await self._conn.commit()
             return count
         else:
-            async with self._pool.acquire() as conn:
-                async with conn.transaction():
-                    await conn.execute(
-                        "DELETE FROM feedback WHERE sighting_id IN "
-                        "(SELECT id FROM sightings WHERE reported_at < $1)",
-                        cutoff
-                    )
-                    result = await conn.execute(
-                        "DELETE FROM sightings WHERE reported_at < $1", cutoff
-                    )
-                    # asyncpg returns status string like "DELETE 42"
-                    try:
-                        return int(result.split()[-1])
-                    except (ValueError, IndexError):
-                        return 0
+            async with self._pool.acquire() as conn, conn.transaction():
+                await conn.execute(
+                    "DELETE FROM feedback WHERE sighting_id IN (SELECT id FROM sightings WHERE reported_at < $1)",
+                    cutoff,
+                )
+                result = await conn.execute("DELETE FROM sightings WHERE reported_at < $1", cutoff)
+                # asyncpg returns status string like "DELETE 42"
+                try:
+                    return int(result.split()[-1])
+                except (ValueError, IndexError):
+                    return 0
 
     # --- Feedback ---
 
-    async def get_user_feedback(self, sighting_id: str, user_id: int) -> Optional[str]:
+    async def get_user_feedback(self, sighting_id: str, user_id: int) -> str | None:
         """Get user's existing vote on a sighting. Returns 'positive'/'negative' or None."""
         row = await self._fetchone(
             f"SELECT vote FROM feedback WHERE sighting_id = {self._ph(1)} AND user_id = {self._ph(2)}",
-            (sighting_id, user_id)
+            (sighting_id, user_id),
         )
         return row["vote"] if row else None
 
@@ -405,18 +382,18 @@ class Database:
             await self._execute(
                 "INSERT INTO feedback (sighting_id, user_id, vote) VALUES (?, ?, ?) "
                 "ON CONFLICT(sighting_id, user_id) DO UPDATE SET vote = excluded.vote",
-                (sighting_id, user_id, vote)
+                (sighting_id, user_id, vote),
             )
         else:
             await self._execute(
                 "INSERT INTO feedback (sighting_id, user_id, vote) VALUES ($1, $2, $3) "
                 "ON CONFLICT (sighting_id, user_id) DO UPDATE SET vote = EXCLUDED.vote",
-                (sighting_id, user_id, vote)
+                (sighting_id, user_id, vote),
             )
 
     # --- Transaction-safe feedback ---
 
-    async def apply_feedback(self, sighting_id: str, user_id: int, new_vote: str) -> Optional[dict]:
+    async def apply_feedback(self, sighting_id: str, user_id: int, new_vote: str) -> dict | None:
         """Atomically apply a feedback vote: read previous, upsert vote, update counts.
 
         Returns the updated sighting dict, or None if sighting not found.
@@ -426,8 +403,7 @@ class Database:
             # SQLite: use the single connection; manual transaction via commit at end
             try:
                 previous_row = await self._conn.execute(
-                    "SELECT vote FROM feedback WHERE sighting_id = ? AND user_id = ?",
-                    (sighting_id, user_id)
+                    "SELECT vote FROM feedback WHERE sighting_id = ? AND user_id = ?", (sighting_id, user_id)
                 )
                 previous = await previous_row.fetchone()
                 previous_vote = dict(previous)["vote"] if previous else None
@@ -452,22 +428,20 @@ class Database:
                 await self._conn.execute(
                     "INSERT INTO feedback (sighting_id, user_id, vote) VALUES (?, ?, ?) "
                     "ON CONFLICT(sighting_id, user_id) DO UPDATE SET vote = excluded.vote",
-                    (sighting_id, user_id, new_vote)
+                    (sighting_id, user_id, new_vote),
                 )
 
                 # Update counts
                 await self._conn.execute(
                     "UPDATE sightings SET feedback_positive = feedback_positive + ?, "
                     "feedback_negative = feedback_negative + ? WHERE id = ?",
-                    (pos_delta, neg_delta, sighting_id)
+                    (pos_delta, neg_delta, sighting_id),
                 )
 
                 await self._conn.commit()
 
                 # Fetch updated sighting
-                cursor = await self._conn.execute(
-                    "SELECT * FROM sightings WHERE id = ?", (sighting_id,)
-                )
+                cursor = await self._conn.execute("SELECT * FROM sightings WHERE id = ?", (sighting_id,))
                 row = await cursor.fetchone()
                 return dict(row) if row else None
             except ValueError:
@@ -476,44 +450,44 @@ class Database:
                 await self._conn.commit()  # release any partial state
                 raise
         else:
-            async with self._pool.acquire() as conn:
-                async with conn.transaction():
-                    previous_row = await conn.fetchrow(
-                        "SELECT vote FROM feedback WHERE sighting_id = $1 AND user_id = $2",
-                        sighting_id, user_id
-                    )
-                    previous_vote = dict(previous_row)["vote"] if previous_row else None
+            async with self._pool.acquire() as conn, conn.transaction():
+                previous_row = await conn.fetchrow(
+                    "SELECT vote FROM feedback WHERE sighting_id = $1 AND user_id = $2", sighting_id, user_id
+                )
+                previous_vote = dict(previous_row)["vote"] if previous_row else None
 
-                    if previous_vote == new_vote:
-                        raise ValueError("duplicate_vote")
+                if previous_vote == new_vote:
+                    raise ValueError("duplicate_vote")
 
-                    pos_delta, neg_delta = 0, 0
-                    if previous_vote == "positive":
-                        pos_delta -= 1
-                    elif previous_vote == "negative":
-                        neg_delta -= 1
+                pos_delta, neg_delta = 0, 0
+                if previous_vote == "positive":
+                    pos_delta -= 1
+                elif previous_vote == "negative":
+                    neg_delta -= 1
 
-                    if new_vote == "positive":
-                        pos_delta += 1
-                    else:
-                        neg_delta += 1
+                if new_vote == "positive":
+                    pos_delta += 1
+                else:
+                    neg_delta += 1
 
-                    await conn.execute(
-                        "INSERT INTO feedback (sighting_id, user_id, vote) VALUES ($1, $2, $3) "
-                        "ON CONFLICT (sighting_id, user_id) DO UPDATE SET vote = EXCLUDED.vote",
-                        sighting_id, user_id, new_vote
-                    )
+                await conn.execute(
+                    "INSERT INTO feedback (sighting_id, user_id, vote) VALUES ($1, $2, $3) "
+                    "ON CONFLICT (sighting_id, user_id) DO UPDATE SET vote = EXCLUDED.vote",
+                    sighting_id,
+                    user_id,
+                    new_vote,
+                )
 
-                    await conn.execute(
-                        "UPDATE sightings SET feedback_positive = feedback_positive + $1, "
-                        "feedback_negative = feedback_negative + $2 WHERE id = $3",
-                        pos_delta, neg_delta, sighting_id
-                    )
+                await conn.execute(
+                    "UPDATE sightings SET feedback_positive = feedback_positive + $1, "
+                    "feedback_negative = feedback_negative + $2 WHERE id = $3",
+                    pos_delta,
+                    neg_delta,
+                    sighting_id,
+                )
 
-                    row = await conn.fetchrow(
-                        "SELECT * FROM sightings WHERE id = $1", sighting_id
-                    )
-                    return dict(row) if row else None
+                row = await conn.fetchrow("SELECT * FROM sightings WHERE id = $1", sighting_id)
+                return dict(row) if row else None
 
     # --- Accuracy (aggregate queries) ---
 
@@ -527,7 +501,7 @@ class Database:
             f"SELECT COALESCE(SUM(feedback_positive), 0) AS pos, "
             f"COALESCE(SUM(feedback_negative), 0) AS neg "
             f"FROM sightings WHERE reporter_id = {self._ph(1)}",
-            (user_id,)
+            (user_id,),
         )
         if not row:
             return 0.0, 0
@@ -543,7 +517,7 @@ class Database:
             f"SELECT COALESCE(SUM(feedback_positive), 0) AS pos, "
             f"COALESCE(SUM(feedback_negative), 0) AS neg "
             f"FROM sightings WHERE reporter_id = {self._ph(1)}",
-            (user_id,)
+            (user_id,),
         )
         if not row:
             return 0, 0

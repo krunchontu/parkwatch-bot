@@ -13,6 +13,7 @@ Crowdsourced parking warden alerts for Singapore drivers. Get notified when ward
 - [Zone Coverage](#zone-coverage)
 - [Reputation System](#reputation-system)
 - [Technical Details](#technical-details)
+- [Development](#development)
 - [Deployment](#deployment)
 - [Roadmap](#roadmap)
 
@@ -54,7 +55,7 @@ Crowdsourced parking warden alerts for Singapore drivers. Get notified when ward
 ## Quick Start
 
 ### Prerequisites
-- Python 3.10+ (tested on 3.14)
+- Python 3.10+ (tested on 3.10, 3.11, 3.12)
 - Telegram account
 - Bot token from [@BotFather](https://t.me/BotFather)
 
@@ -66,6 +67,9 @@ cd parkwatch-bot
 
 # 2. Install dependencies
 pip install -r requirements.txt
+
+# Or install with dev tools (pytest, ruff, mypy):
+pip install -e ".[dev]"
 
 # 3. Create environment file
 cp .env.example .env
@@ -270,18 +274,27 @@ Badge Progression:
 ```
 parkwatch-bot/
 ├── bot/
-│   ├── __init__.py          # Package marker
-│   ├── main.py              # Bot logic, handlers, conversation flow (~1425 lines)
-│   └── database.py          # Dual-driver DB abstraction (~550 lines)
-├── config.py                # Environment configuration & bot settings
-├── requirements.txt         # Python dependencies
-├── .env.example             # Environment variable template
-├── Procfile                 # Heroku-style process declaration
-├── railway.toml             # Railway.app deployment config
-├── runtime.txt              # Python version specification
-├── parking_warden_bot_spec.md  # Full product specification
-├── IMPROVEMENTS.md          # Code review & improvement plan
-└── README.md                # This file
+│   ├── __init__.py              # Package marker
+│   ├── main.py                  # Bot logic, handlers, conversation flow (~1400 lines)
+│   └── database.py              # Dual-driver DB abstraction (~550 lines)
+├── tests/
+│   ├── __init__.py              # Test package marker
+│   ├── conftest.py              # Shared fixtures (fresh SQLite DB per test)
+│   ├── test_unit.py             # Unit tests for pure functions (48 tests)
+│   └── test_database.py         # Database integration tests (57 tests)
+├── .github/
+│   └── workflows/
+│       └── ci.yml               # GitHub Actions CI (lint + typecheck + test)
+├── config.py                    # Environment configuration & bot settings
+├── pyproject.toml               # Project metadata, deps, tool configs
+├── requirements.txt             # Runtime dependencies (legacy compat)
+├── .env.example                 # Environment variable template
+├── Procfile                     # Heroku-style process declaration
+├── railway.toml                 # Railway.app deployment config
+├── runtime.txt                  # Python version specification
+├── parking_warden_bot_spec.md   # Full product specification
+├── IMPROVEMENTS.md              # Code review & improvement plan
+└── README.md                    # This file
 ```
 
 ### Environment Variables
@@ -333,6 +346,61 @@ idx_feedback_sighting ON feedback(sighting_id)
 ```
 
 **Local development** uses SQLite (`parkwatch.db` auto-created). **Production** uses PostgreSQL — just set `DATABASE_URL` and the database driver switches automatically.
+
+---
+
+## Development
+
+### Running Tests
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run all tests
+pytest
+
+# Run with verbose output
+pytest -v
+
+# Run only unit tests
+pytest tests/test_unit.py
+
+# Run only database tests
+pytest tests/test_database.py
+```
+
+**Test suite summary** (105 tests):
+- **48 unit tests** — pure functions (`haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `sanitize_description`, `build_alert_message`, `generate_sighting_id`) plus zone data integrity
+- **57 integration tests** — database CRUD, subscriptions, sightings, feedback, accuracy, rate limiting, cleanup, and driver detection
+
+### Linting & Type Checking
+
+```bash
+# Lint with ruff
+ruff check .
+
+# Check formatting
+ruff format --check .
+
+# Auto-fix lint issues
+ruff check --fix .
+
+# Apply formatting
+ruff format .
+
+# Type check
+mypy bot/ config.py
+```
+
+### CI Pipeline
+
+GitHub Actions runs automatically on every push/PR to `main`:
+1. **Lint** — `ruff check` + `ruff format --check`
+2. **Type Check** — `mypy bot/ config.py`
+3. **Test** — `pytest -v` across Python 3.10, 3.11, 3.12
+
+See `.github/workflows/ci.yml` for the full pipeline configuration.
 
 ---
 
@@ -466,13 +534,15 @@ sudo systemctl status parkwatch
 - [x] Module-level ZONE_COORDS
 - [x] Share message threshold (no "0+" on fresh installs)
 
-### Next: Testing & CI (Phase 6)
-- [ ] pytest + pytest-asyncio test suite
-- [ ] Unit tests for core functions
-- [ ] Database integration tests
-- [ ] GitHub Actions CI pipeline (lint, type check, test)
+### Testing & CI (Phase 6) ✅
+- [x] `pyproject.toml` with project metadata and tool configs
+- [x] pytest + pytest-asyncio test suite (105 tests)
+- [x] Unit tests for pure functions (48 tests across 8 test classes)
+- [x] Database integration tests (57 tests across 10 test classes)
+- [x] GitHub Actions CI pipeline (ruff lint + mypy type check + pytest across 3.10/3.11/3.12)
+- [x] Lint compliance: import sorting, unused variable cleanup, `contextlib.suppress` patterns
 
-### Future: Production Infrastructure (Phase 7)
+### Next: Production Infrastructure (Phase 7)
 - [ ] Webhook mode for production
 - [ ] Health check endpoint
 - [ ] Structured logging (JSON)
@@ -550,9 +620,12 @@ Contributions welcome! Please:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+3. Install dev dependencies: `pip install -e ".[dev]"`
+4. Make your changes
+5. Run the checks: `ruff check . && mypy bot/ config.py && pytest`
+6. Commit your changes (`git commit -m 'Add amazing feature'`)
+7. Push to the branch (`git push origin feature/amazing-feature`)
+8. Open a Pull Request — CI will run automatically
 
 ---
 

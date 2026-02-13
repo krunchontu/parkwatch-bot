@@ -442,6 +442,10 @@ Hougang, Sengkang, Punggol, Serangoon, Kovan, Potong Pasir, Bartley, Buangkok, R
 | Config | python-dotenv |
 | Database (dev) | SQLite via aiosqlite |
 | Database (prod) | PostgreSQL via asyncpg (connection pooling) |
+| Testing | pytest + pytest-asyncio (105 tests) |
+| Linting | ruff (lint + format) |
+| Type Checking | mypy |
+| CI | GitHub Actions (lint, typecheck, test on 3.10/3.11/3.12) |
 | Hosting | Local / Railway / Render / VPS |
 
 ### Database Schema
@@ -544,11 +548,13 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] Proper Python packaging (relative imports)
 - [x] Accuracy display fix, module-level ZONE_COORDS, share threshold
 
-### Phase 6: Testing & CI
-- [ ] pytest + pytest-asyncio test suite
-- [ ] Unit tests for core functions
-- [ ] Database integration tests
-- [ ] GitHub Actions CI pipeline (lint, type check, test)
+### Phase 6: Testing & CI ✅
+- [x] `pyproject.toml` for packaging and tool configs (pytest, ruff, mypy)
+- [x] pytest + pytest-asyncio test suite (105 tests, async auto mode)
+- [x] Unit tests for pure functions (48 tests): `haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `sanitize_description`, `build_alert_message`, `generate_sighting_id`, zone data integrity
+- [x] Database integration tests (57 tests): subscriptions, users, sightings, duplicate detection, rate limiting, feedback, accuracy, cleanup, driver detection
+- [x] GitHub Actions CI pipeline: ruff lint/format, mypy type check, pytest across Python 3.10/3.11/3.12
+- [x] Codebase lint cleanup: import sorting, unused variables, `contextlib.suppress` patterns
 
 ### Phase 7: Production Infrastructure
 - [ ] Webhook mode for production
@@ -599,10 +605,16 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 | File | Purpose |
 |------|---------|
-| `bot/main.py` | Bot logic, handlers, conversation flow (~1425 lines) |
+| `bot/main.py` | Bot logic, handlers, conversation flow (~1400 lines) |
 | `bot/database.py` | Dual-driver database abstraction (~550 lines) |
+| `bot/__init__.py` | Package marker |
 | `config.py` | Environment config and bot settings |
-| `requirements.txt` | Dependencies (`python-telegram-bot`, `python-dotenv`, `aiosqlite`, `asyncpg`) |
+| `pyproject.toml` | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
+| `requirements.txt` | Runtime dependencies (legacy compat for platforms without pyproject.toml) |
+| `tests/conftest.py` | Shared test fixtures (fresh SQLite DB per test) |
+| `tests/test_unit.py` | Unit tests for pure functions (48 tests) |
+| `tests/test_database.py` | Database integration tests (57 tests) |
+| `.github/workflows/ci.yml` | GitHub Actions CI pipeline (lint + typecheck + test) |
 | `.env.example` | Environment variable template |
 | `Procfile` | Heroku-style process declaration |
 | `railway.toml` | Railway.app deployment config |
