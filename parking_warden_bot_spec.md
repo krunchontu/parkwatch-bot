@@ -605,8 +605,8 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 | File | Purpose |
 |------|---------|
-| `bot/main.py` | Bot logic, handlers, conversation flow (~1400 lines) |
-| `bot/database.py` | Dual-driver database abstraction (~550 lines) |
+| `bot/main.py` | Bot logic, handlers, conversation flow (~1420 lines) |
+| `bot/database.py` | Dual-driver database abstraction (~525 lines) |
 | `bot/__init__.py` | Package marker |
 | `config.py` | Environment config and bot settings |
 | `pyproject.toml` | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |

@@ -4,7 +4,7 @@
 
 **Date:** 2026-02-12
 **Scope:** Full code review against `parking_warden_bot_spec.md` and `README.md`
-**Files reviewed:** `bot/main.py` (1437 lines), `bot/database.py` (443 lines), `config.py` (18 lines), `requirements.txt`, `.env.example`
+**Files reviewed:** `bot/main.py` (1419 lines), `bot/database.py` (524 lines), `config.py` (18 lines), `requirements.txt`, `.env.example`
 
 ---
 
@@ -360,19 +360,19 @@ Quick reference for all admin commands once fully implemented.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `bot/main.py` | ~1400 | All bot logic (handlers, routing, conversation flow) |
-| `bot/database.py` | ~550 | Dual-driver database abstraction (SQLite/PostgreSQL) |
+| `bot/main.py` | ~1420 | All bot logic (handlers, routing, conversation flow) |
+| `bot/database.py` | ~525 | Dual-driver database abstraction (SQLite/PostgreSQL) |
 | `bot/__init__.py` | 1 | Package marker |
 | `config.py` | 18 | Environment config and bot settings |
-| `pyproject.toml` | ~70 | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
-| `requirements.txt` | 4 | Runtime dependencies (for platforms that don't use pyproject.toml) |
+| `pyproject.toml` | ~75 | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
+| `requirements.txt` | 5 | Runtime dependencies (for platforms that don't use pyproject.toml) |
 | `.env.example` | 6 | Template for environment variables |
-| `tests/conftest.py` | ~20 | Shared test fixtures (fresh SQLite DB per test) |
-| `tests/test_unit.py` | ~250 | Unit tests for pure functions and zone data integrity |
-| `tests/test_database.py` | ~480 | Database integration tests (CRUD, queries, transactions) |
-| `.github/workflows/ci.yml` | ~35 | GitHub Actions CI pipeline (lint + typecheck + test) |
-| `parking_warden_bot_spec.md` | ~590 | Full product specification with user flows |
-| `README.md` | ~600 | User-facing documentation |
+| `tests/conftest.py` | ~25 | Shared test fixtures (fresh SQLite DB per test) |
+| `tests/test_unit.py` | ~340 | Unit tests for pure functions and zone data integrity (48 tests) |
+| `tests/test_database.py` | ~600 | Database integration tests (CRUD, queries, transactions) (57 tests) |
+| `.github/workflows/ci.yml` | ~45 | GitHub Actions CI pipeline (lint + typecheck + test) |
+| `parking_warden_bot_spec.md` | ~630 | Full product specification with user flows |
+| `README.md` | ~650 | User-facing documentation |
 | `IMPROVEMENTS.md` | — | This file (code review & improvement plan) |
 | `Procfile` | 1 | Heroku-style process declaration |
 | `railway.toml` | 9 | Railway.app deployment config |
