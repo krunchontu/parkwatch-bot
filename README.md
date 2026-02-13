@@ -275,8 +275,8 @@ Badge Progression:
 parkwatch-bot/
 ├── bot/
 │   ├── __init__.py              # Package marker
-│   ├── main.py                  # Bot logic, handlers, conversation flow (~1400 lines)
-│   └── database.py              # Dual-driver DB abstraction (~550 lines)
+│   ├── main.py                  # Bot logic, handlers, conversation flow (~1420 lines)
+│   └── database.py              # Dual-driver DB abstraction (~525 lines)
 ├── tests/
 │   ├── __init__.py              # Test package marker
 │   ├── conftest.py              # Shared fixtures (fresh SQLite DB per test)
@@ -395,7 +395,7 @@ mypy bot/ config.py
 
 ### CI Pipeline
 
-GitHub Actions runs automatically on every push/PR to `main`:
+GitHub Actions runs automatically on every push/PR to `master`:
 1. **Lint** — `ruff check` + `ruff format --check`
 2. **Type Check** — `mypy bot/ config.py`
 3. **Test** — `pytest -v` across Python 3.10, 3.11, 3.12
