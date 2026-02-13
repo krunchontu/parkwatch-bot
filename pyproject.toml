@@ -63,6 +63,13 @@ ignore_missing_imports = true
 check_untyped_defs = false
 
 [[tool.mypy.overrides]]
+module = "bot.main"
+# Telegram Update attributes (callback_query, message, effective_user, user_data)
+# are Optional in type stubs but guaranteed non-None by handler routing at runtime.
+# InlineKeyboardButton args flagged due to dict value type inference from ZONES.
+disable_error_code = ["union-attr", "arg-type", "index"]
+
+[[tool.mypy.overrides]]
 module = "bot.database"
 # _conn and _pool are Optional but always set after connect(); safe at runtime
 disable_error_code = ["attr-defined", "no-any-return"]

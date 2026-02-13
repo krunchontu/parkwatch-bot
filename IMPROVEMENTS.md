@@ -364,7 +364,7 @@ Quick reference for all admin commands once fully implemented.
 | `bot/database.py` | ~525 | Dual-driver database abstraction (SQLite/PostgreSQL) |
 | `bot/__init__.py` | 1 | Package marker |
 | `config.py` | 18 | Environment config and bot settings |
-| `pyproject.toml` | ~70 | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
+| `pyproject.toml` | ~75 | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | 5 | Runtime dependencies (for platforms that don't use pyproject.toml) |
 | `.env.example` | 6 | Template for environment variables |
 | `tests/conftest.py` | ~25 | Shared test fixtures (fresh SQLite DB per test) |
