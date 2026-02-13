@@ -33,5 +33,16 @@ LOG_FORMAT = os.getenv("LOG_FORMAT", "text")
 # Sentry error tracking: set DSN to enable (e.g. "https://key@o0.ingest.sentry.io/0")
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 
+# --- Phase 8: Admin Foundation ---
+
+# Admin authentication: comma-separated Telegram user IDs authorized as admins
+ADMIN_USER_IDS: set[int] = set()
+_admin_ids_raw = os.getenv("ADMIN_USER_IDS", "")
+if _admin_ids_raw.strip():
+    for _id in _admin_ids_raw.split(","):
+        _id = _id.strip()
+        if _id.isdigit():
+            ADMIN_USER_IDS.add(int(_id))
+
 # Bot version (for health check and Sentry release tracking)
-BOT_VERSION = "1.1.0"
+BOT_VERSION = "1.2.0"

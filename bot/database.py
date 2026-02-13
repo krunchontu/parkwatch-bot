@@ -163,7 +163,20 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_sightings_reporter ON sightings (reporter_id)",
             "CREATE INDEX IF NOT EXISTS idx_subscriptions_zone ON subscriptions (zone_name)",
             "CREATE INDEX IF NOT EXISTS idx_feedback_sighting ON feedback (sighting_id)",
+            # Phase 8: Admin audit log
+            """CREATE TABLE IF NOT EXISTS admin_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_id BIGINT NOT NULL,
+                action TEXT NOT NULL,
+                target TEXT,
+                detail TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_admin_actions_time ON admin_actions (created_at)",
         ]
+        if self.driver == "postgresql":
+            # PostgreSQL uses SERIAL instead of AUTOINCREMENT
+            statements = [s.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY") for s in statements]
         for stmt in statements:
             await self._execute(stmt)
 
@@ -522,3 +535,167 @@ class Database:
         if not row:
             return 0, 0
         return row["pos"], row["neg"]
+
+    # --- Phase 8: Admin — Audit Logging ---
+
+    async def log_admin_action(
+        self, admin_id: int, action: str, target: str | None = None, detail: str | None = None
+    ) -> None:
+        """Record an admin action in the audit log."""
+        ph = self._ph
+        await self._execute(
+            f"INSERT INTO admin_actions (admin_id, action, target, detail, created_at) "
+            f"VALUES ({ph(1)}, {ph(2)}, {ph(3)}, {ph(4)}, {ph(5)})",
+            (admin_id, action, target, detail, datetime.now(timezone.utc)),
+        )
+
+    async def get_admin_log(self, limit: int = 20) -> list[dict]:
+        """Get the most recent admin actions."""
+        return await self._fetchall(
+            f"SELECT * FROM admin_actions ORDER BY created_at DESC LIMIT {self._ph(1)}",
+            (limit,),
+        )
+
+    # --- Phase 8: Admin — Global Statistics ---
+
+    async def get_global_stats(self) -> dict:
+        """Get global statistics for the admin dashboard."""
+        now = datetime.now(timezone.utc)
+        seven_days_ago = now - timedelta(days=7)
+        twenty_four_hours_ago = now - timedelta(hours=24)
+
+        total_users = await self._fetchone("SELECT COUNT(*) AS cnt FROM users")
+        total_sightings = await self._fetchone("SELECT COUNT(*) AS cnt FROM sightings")
+        sightings_24h = await self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM sightings WHERE reported_at > {self._ph(1)}",
+            (twenty_four_hours_ago,),
+        )
+        active_subs = await self._fetchone("SELECT COUNT(*) AS cnt FROM subscriptions")
+        unique_subscribers = await self._fetchone("SELECT COUNT(DISTINCT telegram_id) AS cnt FROM subscriptions")
+        feedback_totals = await self._fetchone(
+            "SELECT COALESCE(SUM(feedback_positive), 0) AS pos, "
+            "COALESCE(SUM(feedback_negative), 0) AS neg FROM sightings"
+        )
+
+        # Active users: reported or gave feedback in last 7 days
+        active_reporters = await self._fetchone(
+            f"SELECT COUNT(DISTINCT reporter_id) AS cnt FROM sightings WHERE reported_at > {self._ph(1)}",
+            (seven_days_ago,),
+        )
+        active_feedback_givers = await self._fetchone(
+            f"SELECT COUNT(DISTINCT user_id) AS cnt FROM feedback WHERE created_at > {self._ph(1)}",
+            (seven_days_ago,),
+        )
+
+        return {
+            "total_users": total_users["cnt"] if total_users else 0,
+            "active_reporters_7d": active_reporters["cnt"] if active_reporters else 0,
+            "active_feedback_givers_7d": active_feedback_givers["cnt"] if active_feedback_givers else 0,
+            "total_sightings": total_sightings["cnt"] if total_sightings else 0,
+            "sightings_24h": sightings_24h["cnt"] if sightings_24h else 0,
+            "active_subscriptions": active_subs["cnt"] if active_subs else 0,
+            "unique_subscribers": unique_subscribers["cnt"] if unique_subscribers else 0,
+            "feedback_positive": feedback_totals["pos"] if feedback_totals else 0,
+            "feedback_negative": feedback_totals["neg"] if feedback_totals else 0,
+        }
+
+    async def get_top_zones_by_subscribers(self, limit: int = 5) -> list[dict]:
+        """Get zones with the most subscribers."""
+        return await self._fetchall(
+            f"SELECT zone_name, COUNT(*) AS sub_count FROM subscriptions "
+            f"GROUP BY zone_name ORDER BY sub_count DESC LIMIT {self._ph(1)}",
+            (limit,),
+        )
+
+    async def get_top_zones_by_sightings(self, limit: int = 5, days: int = 7) -> list[dict]:
+        """Get zones with the most sightings in the last N days."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        return await self._fetchall(
+            f"SELECT zone, COUNT(*) AS sighting_count FROM sightings "
+            f"WHERE reported_at > {self._ph(1)} "
+            f"GROUP BY zone ORDER BY sighting_count DESC LIMIT {self._ph(2)}",
+            (cutoff, limit),
+        )
+
+    # --- Phase 8: Admin — User & Zone Lookup ---
+
+    async def get_user_details(self, user_id: int) -> dict | None:
+        """Get detailed user information for admin lookup."""
+        return await self._fetchone(
+            f"SELECT telegram_id, username, report_count, created_at FROM users WHERE telegram_id = {self._ph(1)}",
+            (user_id,),
+        )
+
+    async def get_user_by_username(self, username: str) -> dict | None:
+        """Look up a user by their Telegram username."""
+        # Strip leading @ if present
+        username = username.lstrip("@")
+        return await self._fetchone(
+            f"SELECT telegram_id, username, report_count, created_at FROM users WHERE username = {self._ph(1)}",
+            (username,),
+        )
+
+    async def get_user_recent_sightings(self, user_id: int, limit: int = 10) -> list[dict]:
+        """Get recent sightings by a specific user."""
+        return await self._fetchall(
+            f"SELECT id, zone, description, reported_at, lat, lng, feedback_positive, feedback_negative "
+            f"FROM sightings WHERE reporter_id = {self._ph(1)} ORDER BY reported_at DESC LIMIT {self._ph(2)}",
+            (user_id, limit),
+        )
+
+    async def get_user_subscriptions_list(self, user_id: int) -> list[str]:
+        """Get user's subscribed zones as a sorted list."""
+        rows = await self._fetchall(
+            f"SELECT zone_name FROM subscriptions WHERE telegram_id = {self._ph(1)} ORDER BY zone_name",
+            (user_id,),
+        )
+        return [r["zone_name"] for r in rows]
+
+    async def get_zone_details(self, zone_name: str) -> dict:
+        """Get detailed zone information for admin lookup."""
+        now = datetime.now(timezone.utc)
+        twenty_four_hours_ago = now - timedelta(hours=24)
+        seven_days_ago = now - timedelta(days=7)
+
+        sub_count = await self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM subscriptions WHERE zone_name = {self._ph(1)}",
+            (zone_name,),
+        )
+        sightings_24h = await self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM sightings WHERE zone = {self._ph(1)} AND reported_at > {self._ph(2)}",
+            (zone_name, twenty_four_hours_ago),
+        )
+        sightings_7d = await self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM sightings WHERE zone = {self._ph(1)} AND reported_at > {self._ph(2)}",
+            (zone_name, seven_days_ago),
+        )
+        sightings_all = await self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM sightings WHERE zone = {self._ph(1)}",
+            (zone_name,),
+        )
+
+        return {
+            "zone_name": zone_name,
+            "subscriber_count": sub_count["cnt"] if sub_count else 0,
+            "sightings_24h": sightings_24h["cnt"] if sightings_24h else 0,
+            "sightings_7d": sightings_7d["cnt"] if sightings_7d else 0,
+            "sightings_all": sightings_all["cnt"] if sightings_all else 0,
+        }
+
+    async def get_zone_top_reporters(self, zone_name: str, limit: int = 5) -> list[dict]:
+        """Get top reporters in a specific zone."""
+        return await self._fetchall(
+            f"SELECT reporter_id, reporter_name, COUNT(*) AS report_count "
+            f"FROM sightings WHERE zone = {self._ph(1)} "
+            f"GROUP BY reporter_id, reporter_name ORDER BY report_count DESC LIMIT {self._ph(2)}",
+            (zone_name, limit),
+        )
+
+    async def get_zone_recent_sightings(self, zone_name: str, limit: int = 5) -> list[dict]:
+        """Get most recent sightings in a specific zone."""
+        return await self._fetchall(
+            f"SELECT id, description, reported_at, reporter_name, reporter_badge, "
+            f"feedback_positive, feedback_negative "
+            f"FROM sightings WHERE zone = {self._ph(1)} ORDER BY reported_at DESC LIMIT {self._ph(2)}",
+            (zone_name, limit),
+        )

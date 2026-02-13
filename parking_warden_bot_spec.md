@@ -22,6 +22,19 @@ ParkWatch SG is a Telegram bot that crowdsources real-time parking warden sighti
 | `/share` | Generate invite message | Display shareable message |
 | `/help` | Show all commands | Display help text |
 
+## Admin Commands (Phase 8)
+
+Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
+
+| Command | Description |
+|---------|-------------|
+| `/admin` | List all admin commands |
+| `/admin stats` | Global statistics dashboard (users, sightings, zones, feedback) |
+| `/admin user <id or @username>` | User lookup (details, subscriptions, sightings, accuracy) |
+| `/admin zone <zone_name>` | Zone lookup (subscribers, sightings, top reporters) |
+| `/admin log [count]` | View admin action audit log (default: 20, max: 100) |
+| `/admin help [command]` | Detailed help for a specific admin command |
+
 ---
 
 ## User Flows
@@ -571,13 +584,14 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] Error tracking (Sentry, optional `sentry-sdk` dependency)
 - [x] 22 new tests for Phase 7 features (127 total)
 
-### Phase 8: Admin — Foundation & Visibility
-- [ ] Admin authentication (`ADMIN_USER_IDS` env var, `admin_only` decorator)
-- [ ] `/admin` help and `/admin help <command>`
-- [ ] `/admin stats` — global statistics dashboard (users, sightings, zones, feedback)
-- [ ] `/admin user <id>` — user lookup (activity, subscriptions, accuracy)
-- [ ] `/admin zone <name>` — zone lookup (subscribers, sighting volume, top reporters)
-- [ ] Audit logging (`admin_actions` table, `/admin log`)
+### Phase 8: Admin — Foundation & Visibility ✅
+- [x] Admin authentication (`ADMIN_USER_IDS` env var, `admin_only` decorator — generic rejection for non-admins)
+- [x] `/admin` help and `/admin help <command>` (brief + detailed help text)
+- [x] `/admin stats` — global statistics dashboard (users, sightings, zones, feedback, top zones)
+- [x] `/admin user <id or @username>` — user lookup (details, badge, accuracy, subscriptions, recent sightings)
+- [x] `/admin zone <name>` — zone lookup (subscribers, sighting volume, top reporters, recent sightings)
+- [x] Audit logging (`admin_actions` table, Alembic migration 002, `/admin log [count]`)
+- [x] 43 new tests for all Phase 8 features (170 total)
 
 ### Phase 9: Admin — User Management & Moderation
 - [ ] `/admin ban <id> [reason]`, `/admin unban <id>`, `/admin banlist`
@@ -613,24 +627,26 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 | File | Purpose |
 |------|---------|
-| `bot/main.py` | Bot logic, handlers, conversation flow, webhook/polling (~1460 lines) |
-| `bot/database.py` | Dual-driver database abstraction (~525 lines) |
+| `bot/main.py` | Bot logic, user handlers, admin commands, conversation flow, webhook/polling |
+| `bot/database.py` | Dual-driver database abstraction incl. admin queries (SQLite/PostgreSQL) |
 | `bot/health.py` | Health check HTTP server (asyncio, `GET /health`) |
 | `bot/logging_config.py` | Structured logging configuration (text/JSON) |
 | `bot/__init__.py` | Package marker |
-| `config.py` | Environment config and bot settings (including Phase 7) |
+| `config.py` | Environment config and bot settings (Phases 1–8, incl. `ADMIN_USER_IDS`) |
 | `pyproject.toml` | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | Runtime dependencies (legacy compat for platforms without pyproject.toml) |
 | `alembic.ini` | Alembic migration framework configuration |
 | `alembic/env.py` | Alembic environment (reads DATABASE_URL from config.py) |
 | `alembic/script.py.mako` | Alembic migration script template |
 | `alembic/versions/001_initial_schema.py` | Baseline migration matching create_tables() |
+| `alembic/versions/002_admin_actions_table.py` | Phase 8 migration: admin_actions audit log table |
 | `tests/conftest.py` | Shared test fixtures (fresh SQLite DB per test) |
 | `tests/test_unit.py` | Unit tests for pure functions (48 tests) |
 | `tests/test_database.py` | Database integration tests (57 tests) |
 | `tests/test_phase7.py` | Phase 7 infrastructure tests (22 tests) |
+| `tests/test_phase8.py` | Phase 8 admin foundation tests (43 tests) |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline (lint + typecheck + test) |
-| `.env.example` | Environment variable template (including Phase 7 vars) |
+| `.env.example` | Environment variable template (including Phase 8 vars) |
 | `Procfile` | Heroku-style process declaration |
 | `railway.toml` | Railway.app deployment config (with health check) |
 | `runtime.txt` | Python version specification |
@@ -640,4 +656,4 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 ---
 
-*Last updated: February 2026*
+*Last updated: February 2026 (Phase 8)*
