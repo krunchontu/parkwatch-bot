@@ -120,9 +120,15 @@ Admin commands require the user's Telegram ID to be listed in `ADMIN_USER_IDS`. 
 |---------|-------------|
 | `/admin` | Show all admin commands |
 | `/admin stats` | Global statistics dashboard (users, sightings, zones, feedback) |
-| `/admin user <id or @username>` | Look up a user's details, subscriptions, and activity |
+| `/admin user <id or @username>` | Look up a user's details, subscriptions, activity, and ban status |
 | `/admin zone <zone_name>` | Look up a zone's subscribers, sightings, and top reporters |
 | `/admin log [count]` | View recent admin actions audit log (default: 20, max: 100) |
+| `/admin ban <user_id> [reason]` | Ban a user (clears subscriptions, notifies user) |
+| `/admin unban <user_id>` | Remove a user's ban and reset warnings |
+| `/admin banlist` | List all currently banned users with date and reason |
+| `/admin warn <user_id> [message]` | Send a warning to a user (auto-ban after 3 warnings) |
+| `/admin delete <sighting_id> [confirm]` | Delete a sighting (two-step confirmation) |
+| `/admin review` | View moderation queue of flagged sightings |
 | `/admin help [command]` | Detailed help for a specific admin command |
 
 ---
@@ -303,13 +309,15 @@ parkwatch-bot/
 │   ├── test_unit.py             # Unit tests for pure functions (48 tests)
 │   ├── test_database.py         # Database integration tests (57 tests)
 │   ├── test_phase7.py           # Production infrastructure tests (22 tests)
-│   └── test_phase8.py           # Admin foundation tests (43 tests)
+│   ├── test_phase8.py           # Admin foundation tests (43 tests)
+│   └── test_phase9.py           # User management & moderation tests (47 tests)
 ├── alembic/
 │   ├── env.py                   # Alembic environment (reads DATABASE_URL)
 │   ├── script.py.mako           # Migration script template
 │   └── versions/
 │       ├── 001_initial_schema.py  # Baseline migration
-│       └── 002_admin_actions_table.py  # Phase 8: admin audit log
+│       ├── 002_admin_actions_table.py  # Phase 8: admin audit log
+│       └── 003_phase9_user_management.py  # Phase 9: banning, flagging, warnings
 ├── .github/
 │   └── workflows/
 │       └── ci.yml               # GitHub Actions CI (lint + typecheck + test)
@@ -342,6 +350,7 @@ parkwatch-bot/
 | `LOG_FORMAT` | Logging format: `text` (human) or `json` (structured) | No | `text` |
 | `SENTRY_DSN` | Sentry error tracking DSN | No | — |
 | `ADMIN_USER_IDS` | Comma-separated admin Telegram user IDs | No | `""` (empty) |
+| `MAX_WARNINGS` | Number of warnings before auto-ban (0 to disable) | No | `3` |
 
 ### Bot Settings (`config.py`)
 
@@ -353,23 +362,25 @@ parkwatch-bot/
 | `DUPLICATE_RADIUS_METERS` | 200 | GPS radius for duplicate detection (Haversine) |
 | `SIGHTING_RETENTION_DAYS` | 30 | Days to retain sighting data |
 | `FEEDBACK_WINDOW_HOURS` | 24 | Hours feedback buttons remain active |
-| `BOT_VERSION` | 1.2.0 | Version reported in health check & Sentry |
+| `MAX_WARNINGS` | 3 | Warnings before auto-ban (0 = disabled) |
+| `BOT_VERSION` | 1.3.0 | Version reported in health check & Sentry |
 
 ### Database Schema
 
-Data is stored in 5 tables with 5 indexes. Tables are created automatically on startup.
+Data is stored in 6 tables with 5 indexes. Tables are created automatically on startup.
 
 ```sql
--- User accounts and report counts
-users (telegram_id BIGINT PK, username TEXT, report_count INT, created_at TIMESTAMP)
+-- User accounts, report counts, and warning tracking
+users (telegram_id BIGINT PK, username TEXT, report_count INT, warnings INT, created_at TIMESTAMP)
 
 -- Zone subscriptions (many-to-many)
 subscriptions (telegram_id BIGINT, zone_name TEXT, created_at TIMESTAMP, PK(telegram_id, zone_name))
 
--- Warden sighting reports
+-- Warden sighting reports (with moderation flag)
 sightings (id TEXT PK, zone TEXT, description TEXT, reported_at TIMESTAMP,
            reporter_id BIGINT, reporter_name TEXT, reporter_badge TEXT,
-           lat REAL, lng REAL, feedback_positive INT, feedback_negative INT)
+           lat REAL, lng REAL, feedback_positive INT, feedback_negative INT,
+           flagged INT DEFAULT 0)
 
 -- Feedback votes on sightings (FK cascades on sighting deletion)
 feedback (sighting_id TEXT REFERENCES sightings(id) ON DELETE CASCADE,
@@ -378,6 +389,9 @@ feedback (sighting_id TEXT REFERENCES sightings(id) ON DELETE CASCADE,
 -- Admin audit log (Phase 8)
 admin_actions (id INTEGER PK AUTOINCREMENT, admin_id BIGINT, action TEXT,
               target TEXT, detail TEXT, created_at TIMESTAMP)
+
+-- Banned users (Phase 9)
+banned_users (telegram_id BIGINT PK, banned_by BIGINT, reason TEXT, banned_at TIMESTAMP)
 
 -- Indexes
 idx_sightings_zone_time ON sightings(zone, reported_at)
@@ -412,11 +426,12 @@ pytest tests/test_unit.py
 pytest tests/test_database.py
 ```
 
-**Test suite summary** (170 tests):
+**Test suite summary** (217 tests):
 - **48 unit tests** — pure functions (`haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `sanitize_description`, `build_alert_message`, `generate_sighting_id`) plus zone data integrity
 - **57 integration tests** — database CRUD, subscriptions, sightings, feedback, accuracy, rate limiting, cleanup, and driver detection
 - **22 infrastructure tests** — health check server (5), structured logging (9), config validation (6), Sentry init (2)
 - **43 admin tests** — config parsing (6), admin_only decorator (2), audit log (7), global stats (6), user lookup (9), zone lookup (6), schema (3), help (2), zone validation (2)
+- **47 moderation tests** — ban operations (10), sighting moderation (8), low-accuracy reporters (4), warnings (5), schema (4), config (3), ban_check (2), auto-flag (4), help text (2), ban integration (3), escalation (2)
 
 ### Linting & Type Checking
 
@@ -668,12 +683,19 @@ sudo systemctl status parkwatch
 - [x] Audit logging (`admin_actions` table, `/admin log [count]`, Alembic migration 002)
 - [x] 43 new tests for all Phase 8 features (170 total)
 
-### Future: Admin — User Management & Moderation (Phase 9)
-- [ ] `/admin ban`, `/admin unban`, `/admin banlist`
-- [ ] Ban enforcement middleware
-- [ ] `/admin delete <sighting_id>` — remove false/spam sightings
-- [ ] `/admin review` — moderation queue for flagged sightings
-- [ ] `/admin warn <id>` — warning system with auto-ban escalation
+### Admin — User Management & Moderation (Phase 9) ✅
+- [x] `/admin ban <user_id> [reason]` — ban users (clears subscriptions, notifies user)
+- [x] `/admin unban <user_id>` — remove bans (resets warnings, notifies user)
+- [x] `/admin banlist` — list all banned users with date and reason
+- [x] Ban enforcement middleware (`ban_check` decorator on all user commands except `/start`)
+- [x] `/admin delete <sighting_id> [confirm]` — two-step sighting deletion
+- [x] `/admin review` — moderation queue (flagged sightings + low-accuracy reporters)
+- [x] Auto-flag logic — sightings auto-flagged when >70% negative feedback (3+ votes)
+- [x] `/admin warn <user_id> [message]` — warning system with configurable auto-ban escalation
+- [x] `MAX_WARNINGS` env var (default 3, set 0 to disable)
+- [x] User lookup shows ban status and warning count
+- [x] Alembic migration 003 for Phase 9 schema (banned_users table, flagged/warnings columns)
+- [x] 47 new tests for all Phase 9 features (217 total)
 
 ### Future: Admin — Broadcast & Operations (Phase 10)
 - [ ] `/admin broadcast` — message all users (with confirmation + delivery report)

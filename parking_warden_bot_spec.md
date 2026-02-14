@@ -22,18 +22,24 @@ ParkWatch SG is a Telegram bot that crowdsources real-time parking warden sighti
 | `/share` | Generate invite message | Display shareable message |
 | `/help` | Show all commands | Display help text |
 
-## Admin Commands (Phase 8)
+## Admin Commands (Phases 8–9)
 
 Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
 
-| Command | Description |
-|---------|-------------|
-| `/admin` | List all admin commands |
-| `/admin stats` | Global statistics dashboard (users, sightings, zones, feedback) |
-| `/admin user <id or @username>` | User lookup (details, subscriptions, sightings, accuracy) |
-| `/admin zone <zone_name>` | Zone lookup (subscribers, sightings, top reporters) |
-| `/admin log [count]` | View admin action audit log (default: 20, max: 100) |
-| `/admin help [command]` | Detailed help for a specific admin command |
+| Command | Phase | Description |
+|---------|-------|-------------|
+| `/admin` | 8 | List all admin commands |
+| `/admin stats` | 8 | Global statistics dashboard (users, sightings, zones, feedback) |
+| `/admin user <id or @username>` | 8 | User lookup (details, subscriptions, sightings, accuracy, ban status) |
+| `/admin zone <zone_name>` | 8 | Zone lookup (subscribers, sightings, top reporters) |
+| `/admin log [count]` | 8 | View admin action audit log (default: 20, max: 100) |
+| `/admin ban <user_id> [reason]` | 9 | Ban a user (clears subscriptions, notifies user) |
+| `/admin unban <user_id>` | 9 | Remove a user's ban and reset warnings |
+| `/admin banlist` | 9 | List all currently banned users with date and reason |
+| `/admin warn <user_id> [message]` | 9 | Send a warning (auto-ban after MAX_WARNINGS) |
+| `/admin delete <sighting_id> [confirm]` | 9 | Delete a sighting (two-step confirmation) |
+| `/admin review` | 9 | View moderation queue of flagged sightings |
+| `/admin help [command]` | 8 | Detailed help for a specific admin command |
 
 ---
 
@@ -462,7 +468,7 @@ Set `WEBHOOK_URL` to enable webhook mode. Structured JSON logging available via 
 | Logging | Structured JSON or human-readable text (`bot/logging_config.py`) |
 | Error Tracking | Sentry (optional, via `sentry-sdk`) |
 | Health Check | Asyncio HTTP server (`GET /health`) |
-| Testing | pytest + pytest-asyncio (127 tests) |
+| Testing | pytest + pytest-asyncio (217 tests) |
 | Linting | ruff (lint + format) |
 | Type Checking | mypy |
 | CI | GitHub Actions (lint, typecheck, test on 3.10/3.11/3.12) |
@@ -470,23 +476,31 @@ Set `WEBHOOK_URL` to enable webhook mode. Structured JSON logging available via 
 
 ### Database Schema
 
-Data is stored in 4 tables with 4 indexes. Tables are created automatically on startup via `bot/database.py`. Schema changes are tracked via Alembic migrations in `alembic/versions/`.
+Data is stored in 6 tables with 5 indexes. Tables are created automatically on startup via `bot/database.py`. Schema changes are tracked via Alembic migrations in `alembic/versions/`.
 
 ```sql
--- User accounts and report counts
-users (telegram_id BIGINT PK, username TEXT, report_count INT, created_at TIMESTAMP)
+-- User accounts, report counts, and warning tracking
+users (telegram_id BIGINT PK, username TEXT, report_count INT, warnings INT DEFAULT 0, created_at TIMESTAMP)
 
 -- Zone subscriptions (many-to-many)
 subscriptions (telegram_id BIGINT, zone_name TEXT, created_at TIMESTAMP, PK(telegram_id, zone_name))
 
--- Warden sighting reports
+-- Warden sighting reports (with moderation flag)
 sightings (id TEXT PK, zone TEXT, description TEXT, reported_at TIMESTAMP,
            reporter_id BIGINT, reporter_name TEXT, reporter_badge TEXT,
-           lat REAL, lng REAL, feedback_positive INT, feedback_negative INT)
+           lat REAL, lng REAL, feedback_positive INT, feedback_negative INT,
+           flagged INT DEFAULT 0)
 
 -- Feedback votes on sightings (FK cascades on sighting deletion)
 feedback (sighting_id TEXT REFERENCES sightings(id) ON DELETE CASCADE,
          user_id BIGINT, vote TEXT, created_at TIMESTAMP, PK(sighting_id, user_id))
+
+-- Admin audit log (Phase 8)
+admin_actions (id INTEGER PK AUTOINCREMENT, admin_id BIGINT, action TEXT,
+              target TEXT, detail TEXT, created_at TIMESTAMP)
+
+-- Banned users (Phase 9)
+banned_users (telegram_id BIGINT PK, banned_by BIGINT, reason TEXT, banned_at TIMESTAMP)
 ```
 
 The database driver is selected automatically based on `DATABASE_URL`:
@@ -495,7 +509,7 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 ---
 
-## Spam Prevention
+## Spam Prevention & Moderation
 
 1. **Rate Limiting**: Max 3 reports per user per hour
 2. **Duplicate Detection**: GPS-aware — reports in the same zone within 5 mins are checked:
@@ -505,6 +519,9 @@ The database driver is selected automatically based on `DATABASE_URL`:
 3. **Accuracy Tracking**: Low-accuracy reporters flagged with ❌
 4. **Community Moderation**: Multiple 👎 ratings reduce trust
 5. **Self-Rating Blocked**: Reporters cannot rate own sightings
+6. **User Banning** (Phase 9): Admins can ban abusive users via `/admin ban`. Banned users cannot use any commands except `/start`. Bans clear subscriptions and notify the user.
+7. **Content Moderation** (Phase 9): Admins can delete false sightings via `/admin delete`. Sightings are auto-flagged when negative feedback exceeds 70% (3+ votes). `/admin review` shows the moderation queue.
+8. **Warning System** (Phase 9): Admins can warn users via `/admin warn`. After 3 warnings (configurable via `MAX_WARNINGS`), users are automatically banned.
 
 ---
 
@@ -593,13 +610,15 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] Audit logging (`admin_actions` table, Alembic migration 002, `/admin log [count]`)
 - [x] 43 new tests for all Phase 8 features (170 total)
 
-### Phase 9: Admin — User Management & Moderation
-- [ ] `/admin ban <id> [reason]`, `/admin unban <id>`, `/admin banlist`
-- [ ] Ban enforcement middleware (block banned users from all commands)
-- [ ] `/admin delete <sighting_id>` — remove false/spam sightings
-- [ ] `/admin review` — moderation queue (high negative feedback, low-accuracy reporters)
-- [ ] Auto-flag logic (sightings with >70% negative feedback)
-- [ ] `/admin warn <id> [message]` — warn users, auto-ban after N warnings
+### Phase 9: Admin — User Management & Moderation ✅
+- [x] `/admin ban <id> [reason]`, `/admin unban <id>`, `/admin banlist`
+- [x] Ban enforcement middleware (`ban_check` decorator on all user commands except `/start`)
+- [x] `/admin delete <sighting_id> [confirm]` — two-step sighting deletion
+- [x] `/admin review` — moderation queue (flagged sightings + low-accuracy reporters)
+- [x] Auto-flag logic (sightings auto-flagged when >70% negative feedback, 3+ votes)
+- [x] `/admin warn <id> [message]` — warning system with configurable auto-ban (MAX_WARNINGS=3)
+- [x] User lookup shows ban status and warning count
+- [x] Alembic migration 003, 47 new tests (217 total)
 
 ### Phase 10: Admin — Broadcast & Operations
 - [ ] `/admin broadcast <message>` — send to all users (with confirmation + delivery report)
@@ -627,12 +646,12 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 | File | Purpose |
 |------|---------|
-| `bot/main.py` | Bot logic, user handlers, admin commands, conversation flow, webhook/polling |
-| `bot/database.py` | Dual-driver database abstraction incl. admin queries (SQLite/PostgreSQL) |
+| `bot/main.py` | Bot logic, user handlers, admin commands (Phases 8–9), conversation flow, webhook/polling |
+| `bot/database.py` | Dual-driver database abstraction incl. admin + moderation queries (SQLite/PostgreSQL) |
 | `bot/health.py` | Health check HTTP server (asyncio, `GET /health`) |
 | `bot/logging_config.py` | Structured logging configuration (text/JSON) |
 | `bot/__init__.py` | Package marker |
-| `config.py` | Environment config and bot settings (Phases 1–8, incl. `ADMIN_USER_IDS`) |
+| `config.py` | Environment config and bot settings (Phases 1–9, incl. `MAX_WARNINGS`) |
 | `pyproject.toml` | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | Runtime dependencies (legacy compat for platforms without pyproject.toml) |
 | `alembic.ini` | Alembic migration framework configuration |
@@ -640,13 +659,15 @@ The database driver is selected automatically based on `DATABASE_URL`:
 | `alembic/script.py.mako` | Alembic migration script template |
 | `alembic/versions/001_initial_schema.py` | Baseline migration matching create_tables() |
 | `alembic/versions/002_admin_actions_table.py` | Phase 8 migration: admin_actions audit log table |
+| `alembic/versions/003_phase9_user_management.py` | Phase 9 migration: banned_users table, flagged/warnings columns |
 | `tests/conftest.py` | Shared test fixtures (fresh SQLite DB per test) |
 | `tests/test_unit.py` | Unit tests for pure functions (48 tests) |
 | `tests/test_database.py` | Database integration tests (57 tests) |
 | `tests/test_phase7.py` | Phase 7 infrastructure tests (22 tests) |
 | `tests/test_phase8.py` | Phase 8 admin foundation tests (43 tests) |
+| `tests/test_phase9.py` | Phase 9 user management & moderation tests (47 tests) |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline (lint + typecheck + test) |
-| `.env.example` | Environment variable template (including Phase 8 vars) |
+| `.env.example` | Environment variable template (including Phase 9 vars) |
 | `Procfile` | Heroku-style process declaration |
 | `railway.toml` | Railway.app deployment config (with health check) |
 | `runtime.txt` | Python version specification |
@@ -656,4 +677,4 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 ---
 
-*Last updated: February 2026 (Phase 8)*
+*Last updated: February 2026 (Phase 9)*

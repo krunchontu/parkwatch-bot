@@ -131,6 +131,7 @@ class Database:
                 telegram_id BIGINT PRIMARY KEY,
                 username TEXT,
                 report_count INTEGER DEFAULT 0,
+                warnings INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
             """CREATE TABLE IF NOT EXISTS subscriptions (
@@ -150,7 +151,8 @@ class Database:
                 lat REAL,
                 lng REAL,
                 feedback_positive INTEGER DEFAULT 0,
-                feedback_negative INTEGER DEFAULT 0
+                feedback_negative INTEGER DEFAULT 0,
+                flagged INTEGER DEFAULT 0
             )""",
             """CREATE TABLE IF NOT EXISTS feedback (
                 sighting_id TEXT NOT NULL REFERENCES sightings(id) ON DELETE CASCADE,
@@ -173,6 +175,13 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
             "CREATE INDEX IF NOT EXISTS idx_admin_actions_time ON admin_actions (created_at)",
+            # Phase 9: Banned users
+            """CREATE TABLE IF NOT EXISTS banned_users (
+                telegram_id BIGINT PRIMARY KEY,
+                banned_by BIGINT NOT NULL,
+                reason TEXT,
+                banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
         ]
         if self.driver == "postgresql":
             # PostgreSQL uses SERIAL instead of AUTOINCREMENT
@@ -699,3 +708,130 @@ class Database:
             f"FROM sightings WHERE zone = {self._ph(1)} ORDER BY reported_at DESC LIMIT {self._ph(2)}",
             (zone_name, limit),
         )
+
+    # --- Phase 9: User Banning ---
+
+    async def ban_user(self, user_id: int, banned_by: int, reason: str | None = None) -> None:
+        """Ban a user: insert into banned_users and clear their subscriptions."""
+        now = datetime.now(timezone.utc)
+        if self.driver == "sqlite":
+            await self._execute(
+                "INSERT OR REPLACE INTO banned_users (telegram_id, banned_by, reason, banned_at) VALUES (?, ?, ?, ?)",
+                (user_id, banned_by, reason, now),
+            )
+        else:
+            await self._execute(
+                "INSERT INTO banned_users (telegram_id, banned_by, reason, banned_at) "
+                "VALUES ($1, $2, $3, $4) "
+                "ON CONFLICT (telegram_id) DO UPDATE SET banned_by = EXCLUDED.banned_by, "
+                "reason = EXCLUDED.reason, banned_at = EXCLUDED.banned_at",
+                (user_id, banned_by, reason, now),
+            )
+        await self.clear_subscriptions(user_id)
+
+    async def unban_user(self, user_id: int) -> bool:
+        """Remove a ban. Returns True if the user was actually banned."""
+        # Check if banned first
+        row = await self._fetchone(
+            f"SELECT telegram_id FROM banned_users WHERE telegram_id = {self._ph(1)}", (user_id,)
+        )
+        if not row:
+            return False
+        await self._execute(f"DELETE FROM banned_users WHERE telegram_id = {self._ph(1)}", (user_id,))
+        return True
+
+    async def is_banned(self, user_id: int) -> bool:
+        """Check if a user is currently banned."""
+        row = await self._fetchone(
+            f"SELECT telegram_id FROM banned_users WHERE telegram_id = {self._ph(1)}", (user_id,)
+        )
+        return row is not None
+
+    async def get_banned_users(self) -> list[dict]:
+        """Get all currently banned users, newest bans first."""
+        return await self._fetchall(
+            "SELECT telegram_id, banned_by, reason, banned_at FROM banned_users ORDER BY banned_at DESC"
+        )
+
+    # --- Phase 9: Sighting Moderation ---
+
+    async def delete_sighting(self, sighting_id: str) -> dict | None:
+        """Delete a sighting by ID. Returns the sighting data before deletion, or None."""
+        sighting = await self.get_sighting(sighting_id)
+        if not sighting:
+            return None
+        # FK CASCADE handles feedback deletion
+        await self._execute(f"DELETE FROM sightings WHERE id = {self._ph(1)}", (sighting_id,))
+        return sighting
+
+    async def flag_sighting(self, sighting_id: str) -> None:
+        """Mark a sighting as flagged for review."""
+        await self._execute(f"UPDATE sightings SET flagged = 1 WHERE id = {self._ph(1)}", (sighting_id,))
+
+    async def get_flagged_sightings(self, limit: int = 20) -> list[dict]:
+        """Get sightings flagged for moderation review.
+
+        Returns sightings that are either:
+        - Explicitly flagged (flagged = 1)
+        - Have negative feedback > positive feedback with 3+ total votes
+        """
+        return await self._fetchall(
+            f"SELECT * FROM sightings WHERE "
+            f"flagged = 1 OR "
+            f"(feedback_negative > feedback_positive AND (feedback_positive + feedback_negative) >= 3) "
+            f"ORDER BY reported_at DESC LIMIT {self._ph(1)}",
+            (limit,),
+        )
+
+    async def get_low_accuracy_reporters(self, max_accuracy: float = 0.5, min_feedback: int = 5) -> list[dict]:
+        """Get reporters whose accuracy is below the threshold.
+
+        Returns users with accuracy < max_accuracy and at least min_feedback total ratings.
+        """
+        rows = await self._fetchall(
+            f"SELECT reporter_id, "
+            f"SUM(feedback_positive) AS total_pos, "
+            f"SUM(feedback_negative) AS total_neg, "
+            f"COUNT(*) AS sighting_count "
+            f"FROM sightings "
+            f"GROUP BY reporter_id "
+            f"HAVING (SUM(feedback_positive) + SUM(feedback_negative)) >= {self._ph(1)}",
+            (min_feedback,),
+        )
+        result = []
+        for r in rows:
+            total = r["total_pos"] + r["total_neg"]
+            if total > 0 and r["total_pos"] / total < max_accuracy:
+                result.append(
+                    {
+                        "reporter_id": r["reporter_id"],
+                        "total_positive": r["total_pos"],
+                        "total_negative": r["total_neg"],
+                        "accuracy": r["total_pos"] / total,
+                        "sighting_count": r["sighting_count"],
+                    }
+                )
+        return result
+
+    # --- Phase 9: Reporter Warnings ---
+
+    async def get_user_warnings(self, user_id: int) -> int:
+        """Get the warning count for a user."""
+        row = await self._fetchone(f"SELECT warnings FROM users WHERE telegram_id = {self._ph(1)}", (user_id,))
+        return row["warnings"] if row else 0
+
+    async def increment_warnings(self, user_id: int) -> int:
+        """Increment warning count for a user. Returns the new count."""
+        if self.driver == "sqlite":
+            await self._execute("UPDATE users SET warnings = warnings + 1 WHERE telegram_id = ?", (user_id,))
+            row = await self._fetchone("SELECT warnings FROM users WHERE telegram_id = ?", (user_id,))
+        else:
+            row = await self._fetchone(
+                "UPDATE users SET warnings = warnings + 1 WHERE telegram_id = $1 RETURNING warnings",
+                (user_id,),
+            )
+        return row["warnings"] if row else 0
+
+    async def reset_warnings(self, user_id: int) -> None:
+        """Reset warning count to zero for a user."""
+        await self._execute(f"UPDATE users SET warnings = 0 WHERE telegram_id = {self._ph(1)}", (user_id,))

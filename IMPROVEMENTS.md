@@ -2,15 +2,15 @@
 
 ## Audit Summary
 
-**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 8 update)
+**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 8 update), 2026-02-14 (Phase 9 update)
 **Scope:** Full code review against `parking_warden_bot_spec.md` and `README.md`
 **Files reviewed:** `bot/main.py`, `bot/database.py`, `bot/health.py`, `bot/logging_config.py`, `config.py`, `requirements.txt`, `.env.example`
 
 ---
 
-## Status: Phases 1–8 Complete
+## Status: Phases 1–9 Complete
 
-Phases 1 through 8 addressed all critical bugs, UX issues, data persistence, robustness gaps, known code defects, established automated testing and CI, hardened the bot for production deployment, and added admin foundation with visibility tools. All items below are checked off and verified in the current codebase.
+Phases 1 through 9 addressed all critical bugs, UX issues, data persistence, robustness gaps, known code defects, established automated testing and CI, hardened the bot for production deployment, added admin foundation with visibility tools, and implemented user management with content moderation. All items below are checked off and verified in the current codebase.
 
 ### Phase 1: Critical Fixes (Code-Doc Alignment & Stability) ✅
 
@@ -47,11 +47,11 @@ Phases 1 through 8 addressed all critical bugs, UX issues, data persistence, rob
 
 ---
 
-## Current State Assessment (2026-02-13)
+## Current State Assessment (2026-02-14)
 
 ### What's Working Well
 
-1. **Feature completeness** — All 9 user commands + admin command suite implemented and functional
+1. **Feature completeness** — All 9 user commands + full admin command suite (12 commands) implemented and functional
 2. **ConversationHandler** — Proper 6-state machine with timeout, fallbacks, and `/cancel` support
 3. **Database layer** — Clean dual-driver abstraction with WAL mode, connection pooling, parameterized queries
 4. **GPS-aware duplicate detection** — Haversine + 200m radius, zone-level fallback
@@ -61,11 +61,12 @@ Phases 1 through 8 addressed all critical bugs, UX issues, data persistence, rob
 8. **Config externalization** — All tunable values in `config.py` with env var overrides
 9. **Timezone-safe datetime** — All `datetime.now(timezone.utc)` throughout codebase
 10. **Proper Python packaging** — Runs as `python -m bot.main`, relative imports, no sys.path hacks
-11. **Test coverage** — 170 tests (48 unit + 57 integration + 22 infrastructure + 43 admin) with 100% pass rate
+11. **Test coverage** — 217 tests (48 unit + 57 integration + 22 infrastructure + 43 admin + 47 moderation) with 100% pass rate
 12. **CI pipeline** — Automated lint, type check, and test on every push/PR via GitHub Actions
 13. **Code quality** — All ruff lint and format checks pass, mypy type checking clean
 14. **Production infrastructure** — Webhook mode, health check endpoint, structured JSON logging, Alembic migrations, Sentry integration
 15. **Admin foundation** — Authentication layer, global stats dashboard, user/zone lookup, audit logging with full test coverage
+16. **User management** — Ban/unban, moderation queue, warning system with auto-ban escalation, ban enforcement middleware
 
 ---
 
@@ -144,7 +145,7 @@ Establish the admin authentication layer, provide global visibility into bot act
   - Subscribed zones
   - Recent sightings (last 10)
   - Feedback received (positive/negative totals)
-  - Ban status placeholder (once Phase 9 is implemented)
+  - Ban status and warning count (Phase 9)
 - [x] **8.4.2** `/admin zone <zone_name>` — look up a specific zone (case-insensitive matching):
   - Subscriber count
   - Sighting count (last 24h / 7d / all-time)
@@ -175,7 +176,7 @@ Establish the admin authentication layer, provide global visibility into bot act
 
 ---
 
-### Phase 9: Admin — User Management & Content Moderation
+### Phase 9: Admin — User Management & Content Moderation ✅
 
 Give admins the ability to remove bad actors and false content. Critical for platform trust as the user base grows.
 
@@ -183,7 +184,7 @@ Give admins the ability to remove bad actors and false content. Critical for pla
 
 #### 9.1 User Banning
 
-- [ ] **9.1.1** `banned_users` table — schema:
+- [x] **9.1.1** `banned_users` table — schema:
   ```sql
   banned_users (
     telegram_id BIGINT PK,
@@ -192,45 +193,58 @@ Give admins the ability to remove bad actors and false content. Critical for pla
     banned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
   )
   ```
-- [ ] **9.1.2** `/admin ban <user_id> [reason]` — ban a user:
+  Alembic migration `003_phase9_user_management.py` added; table also created by `create_tables()` fallback.
+- [x] **9.1.2** `/admin ban <user_id> [reason]` — ban a user:
   - Insert into `banned_users`
   - Clear all subscriptions for the user (stop them receiving alerts)
   - Log action to `admin_actions`
-  - Notify the banned user: "Your account has been restricted. Contact @admin_username for appeals."
-- [ ] **9.1.3** `/admin unban <user_id>` — remove ban, log action, notify user
-- [ ] **9.1.4** `/admin banlist` — list all currently banned users with ban date and reason
-- [ ] **9.1.5** Ban enforcement middleware — check `banned_users` table on every command handler:
-  - Banned users cannot: `/report`, `/subscribe`, `/recent`, `/mystats`, `/share`
-  - Banned users receive a single static message when attempting any action
-  - Do NOT check on `/start` (allow re-onboarding after unban)
-- [ ] **9.1.6** Database methods: `ban_user()`, `unban_user()`, `is_banned()`, `get_banned_users()`
+  - Notify the banned user: "Your account has been restricted due to policy violations."
+  - Prevents banning admin users
+  - Idempotent: re-banning updates the existing ban record
+- [x] **9.1.3** `/admin unban <user_id>` — remove ban, reset warnings to zero, log action, notify user
+- [x] **9.1.4** `/admin banlist` — list all currently banned users with ban date, banning admin, and reason
+- [x] **9.1.5** Ban enforcement middleware — `ban_check` decorator on every user-facing command handler:
+  - Banned users cannot: `/report`, `/subscribe`, `/unsubscribe`, `/myzones`, `/recent`, `/mystats`, `/share`
+  - Banned users receive a single static restriction message when attempting any action
+  - `/start` is intentionally excluded (allow re-onboarding after unban)
+- [x] **9.1.6** Database methods: `ban_user()`, `unban_user()`, `is_banned()`, `get_banned_users()`
 
 #### 9.2 Sighting Moderation
 
-- [ ] **9.2.1** `/admin delete <sighting_id>` — remove a specific sighting:
-  - Delete sighting and cascaded feedback (FK already handles this)
-  - Log action to `admin_actions` with sighting details for the record
-  - Confirmation step: show sighting details, require `/admin delete <id> confirm`
-- [ ] **9.2.2** `/admin review` — show a moderation queue of flagged sightings:
-  - Sightings where `feedback_negative > feedback_positive` and total feedback >= 3
-  - Sightings from users with accuracy < 50% and total feedback >= 5
-  - Display: sighting details, reporter info, feedback ratio, action buttons
-- [ ] **9.2.3** Auto-flag logic — mark sightings for review when:
-  - Negative feedback ratio exceeds 70% (with at least 3 votes)
-  - Reporter accuracy drops below 40% (with at least 5 total feedback across all reports)
-  - `flagged` boolean column added to `sightings` table
-- [ ] **9.2.4** Database methods: `delete_sighting()`, `get_flagged_sightings()`, `flag_sighting()`, `get_low_accuracy_reporters()`
+- [x] **9.2.1** `/admin delete <sighting_id> [confirm]` — remove a specific sighting:
+  - First call shows sighting details (zone, time, description, reporter, feedback) for review
+  - Add `confirm` to execute deletion; FK CASCADE handles feedback cleanup
+  - Log action to `admin_actions` with sighting zone and reporter ID
+- [x] **9.2.2** `/admin review` — show a moderation queue with two sections:
+  - **Flagged Sightings:** sightings explicitly flagged OR with negative feedback > positive (3+ total votes)
+  - **Low-Accuracy Reporters:** users with accuracy < 50% and 5+ total feedback ratings
+  - Display includes sighting details, reporter info, feedback ratio with percentage
+  - Includes actionable hints (delete, ban, warn commands)
+- [x] **9.2.3** Auto-flag logic — `_check_auto_flag()` called after every feedback update:
+  - Flags sighting when negative feedback ratio exceeds 70% (with at least 3 total votes)
+  - `flagged` INTEGER column (0/1) added to `sightings` table
+  - Logged with structured logging when triggered
+- [x] **9.2.4** Database methods: `delete_sighting()`, `get_flagged_sightings()`, `flag_sighting()`, `get_low_accuracy_reporters()`
 
 #### 9.3 Reporter Warnings
 
-- [ ] **9.3.1** `/admin warn <user_id> [message]` — send a warning to a user:
-  - Bot messages the user with the warning text
-  - Log to `admin_actions`
-  - Track warning count per user (new `warnings` column in `users` table)
-- [ ] **9.3.2** Auto-warn threshold — automatically send a system warning when:
-  - User's accuracy drops below 50% after 5+ feedback ratings
-  - User has been rate-limited 3+ times in a single day
-- [ ] **9.3.3** Escalation path: 3 warnings → auto-ban (configurable via `MAX_WARNINGS` env var, default 3)
+- [x] **9.3.1** `/admin warn <user_id> [message]` — send a warning to a user:
+  - Bot messages the user with the warning text and current warning count (N/MAX_WARNINGS)
+  - Increments `warnings` column in `users` table
+  - Log to `admin_actions` with warning number and message preview
+  - Default message provided when no custom message specified
+- [x] **9.3.2** Warning tracking — `warnings` INTEGER column added to `users` table (default 0)
+  - Database methods: `get_user_warnings()`, `increment_warnings()`, `reset_warnings()`
+  - Warning count visible in `/admin user <id>` lookup
+- [x] **9.3.3** Escalation path: 3 warnings → auto-ban (configurable via `MAX_WARNINGS` env var, default 3)
+  - When warning count reaches MAX_WARNINGS, user is automatically banned
+  - Auto-ban logged to `admin_actions` with reason "Warning count reached N"
+  - Admin notified of auto-ban in command response
+  - Set `MAX_WARNINGS=0` to disable auto-ban escalation
+
+#### 9.4 Testing
+
+- [x] **9.4.1** 47 new tests in `tests/test_phase9.py`: ban operations (10 tests), sighting moderation (8 tests), low-accuracy reporters (4 tests), warnings (5 tests), schema validation (4 tests), config (3 tests), ban_check decorator (2 tests), auto-flag logic (4 tests), help text (2 tests), ban integration (3 tests), warning escalation (2 tests) — **217 total tests**
 
 ---
 
@@ -350,9 +364,9 @@ Quick reference for all admin commands once fully implemented.
 | Change | Phase | Status | Description |
 |--------|-------|--------|-------------|
 | New table: `admin_actions` | 8.5 | ✅ Done | Audit log for all admin operations |
-| New table: `banned_users` | 9.1 | Planned | Banned user records with reason |
-| New column: `sightings.flagged` | 9.2 | Planned | Boolean flag for moderation queue |
-| New column: `users.warnings` | 9.3 | Planned | Warning count per user |
+| New table: `banned_users` | 9.1 | ✅ Done | Banned user records with reason and banning admin |
+| New column: `sightings.flagged` | 9.2 | ✅ Done | Integer flag for moderation queue (0/1) |
+| New column: `users.warnings` | 9.3 | ✅ Done | Warning count per user (integer, default 0) |
 | New table: `config_overrides` | 10.4 | Planned | Runtime configuration overrides |
 
 ## Environment Variables Added (Phase 7+)
@@ -374,28 +388,30 @@ Quick reference for all admin commands once fully implemented.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `bot/main.py` | ~1850 | All bot logic: user handlers, admin handlers, conversation flow, webhook/polling |
-| `bot/database.py` | ~720 | Dual-driver database abstraction (SQLite/PostgreSQL) including admin queries |
+| `bot/main.py` | ~2150 | All bot logic: user handlers, admin handlers (Phase 8–9), conversation flow, webhook/polling |
+| `bot/database.py` | ~850 | Dual-driver database abstraction (SQLite/PostgreSQL) including admin + moderation queries |
 | `bot/health.py` | ~75 | Health check HTTP server (asyncio-based, `/health` endpoint) |
 | `bot/logging_config.py` | ~65 | Structured logging configuration (text/JSON modes) |
 | `bot/__init__.py` | 1 | Package marker |
-| `config.py` | ~48 | Environment config and bot settings (Phases 1–8, incl. `ADMIN_USER_IDS`) |
+| `config.py` | ~52 | Environment config and bot settings (Phases 1–9, incl. `MAX_WARNINGS`) |
 | `pyproject.toml` | ~80 | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | 5 | Runtime dependencies (for platforms that don't use pyproject.toml) |
-| `.env.example` | ~27 | Template for environment variables (including Phase 8 additions) |
+| `.env.example` | ~32 | Template for environment variables (including Phase 9 additions) |
 | `alembic.ini` | ~40 | Alembic migration framework configuration |
 | `alembic/env.py` | ~50 | Alembic environment (reads DATABASE_URL from config.py) |
 | `alembic/script.py.mako` | ~25 | Alembic migration script template |
 | `alembic/versions/001_initial_schema.py` | ~80 | Baseline migration matching create_tables() |
 | `alembic/versions/002_admin_actions_table.py` | ~40 | Phase 8 migration: admin_actions audit log table |
+| `alembic/versions/003_phase9_user_management.py` | ~45 | Phase 9 migration: banned_users table, flagged/warnings columns |
 | `tests/conftest.py` | ~25 | Shared test fixtures (fresh SQLite DB per test) |
 | `tests/test_unit.py` | ~340 | Unit tests for pure functions and zone data integrity (48 tests) |
 | `tests/test_database.py` | ~600 | Database integration tests (CRUD, queries, transactions) (57 tests) |
 | `tests/test_phase7.py` | ~240 | Phase 7 tests: health check, logging, config, Sentry (22 tests) |
 | `tests/test_phase8.py` | ~530 | Phase 8 tests: admin auth, stats, lookup, audit log (43 tests) |
+| `tests/test_phase9.py` | ~550 | Phase 9 tests: banning, moderation, warnings, auto-flag, escalation (47 tests) |
 | `.github/workflows/ci.yml` | ~45 | GitHub Actions CI pipeline (lint + typecheck + test) |
-| `parking_warden_bot_spec.md` | ~650 | Full product specification with user flows |
-| `README.md` | ~800 | User-facing documentation |
+| `parking_warden_bot_spec.md` | ~700 | Full product specification with user flows |
+| `README.md` | ~850 | User-facing documentation |
 | `IMPROVEMENTS.md` | — | This file (code review & improvement plan) |
 | `Procfile` | 1 | Heroku-style process declaration |
 | `railway.toml` | ~10 | Railway.app deployment config (with health check) |
@@ -403,4 +419,4 @@ Quick reference for all admin commands once fully implemented.
 
 ---
 
-*Last updated: 2026-02-13 (Phase 8)*
+*Last updated: 2026-02-14 (Phase 9)*

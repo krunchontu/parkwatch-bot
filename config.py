@@ -44,5 +44,10 @@ if _admin_ids_raw.strip():
         if _id.isdigit():
             ADMIN_USER_IDS.add(int(_id))
 
+# --- Phase 9: User Management & Content Moderation ---
+
+# Maximum warnings before auto-ban (0 = disable auto-ban escalation)
+MAX_WARNINGS = int(os.getenv("MAX_WARNINGS", "3"))
+
 # Bot version (for health check and Sentry release tracking)
-BOT_VERSION = "1.2.0"
+BOT_VERSION = "1.3.0"
