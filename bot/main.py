@@ -35,6 +35,7 @@ from config import (
     HEALTH_CHECK_PORT,
     LOG_FORMAT,
     MAX_REPORTS_PER_HOUR,
+    MAX_WARNINGS,
     PORT,
     SENTRY_DSN,
     SIGHTING_EXPIRY_MINUTES,
@@ -359,6 +360,26 @@ def sanitize_description(text):
 CHOOSING_METHOD, SELECTING_REGION, SELECTING_ZONE, AWAITING_LOCATION, AWAITING_DESCRIPTION, CONFIRMING = range(6)
 
 
+# Phase 9: Ban enforcement middleware
+def ban_check(func):
+    """Decorator that blocks banned users from using a command.
+
+    Banned users receive a static restriction message. Does NOT apply to /start.
+    """
+
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        db = get_db()
+        if await db.is_banned(user_id):
+            await update.message.reply_text(
+                "Your account has been restricted due to policy violations.\nContact the bot administrator for appeals."
+            )
+            return
+        return await func(update, context)
+
+    return wrapper
+
+
 async def build_zone_keyboard(region_key, user_id):
     """Build zone keyboard with subscription status indicators."""
     region = ZONES.get(region_key)
@@ -471,6 +492,7 @@ async def handle_back_to_regions(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text("Which areas do you want alerts for?", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+@ban_check
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /subscribe command."""
     keyboard = [[InlineKeyboardButton(region["name"], callback_data=f"region_{key}")] for key, region in ZONES.items()]
@@ -478,6 +500,7 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Which areas do you want to add?", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+@ban_check
 async def myzones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /myzones command."""
     user_id = update.effective_user.id
@@ -492,6 +515,7 @@ async def myzones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You're not subscribed to any zones yet.\nUse /start to select zones.")
 
 
+@ban_check
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /unsubscribe command."""
     user_id = update.effective_user.id
@@ -561,6 +585,7 @@ async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFA
     )
 
 
+@ban_check
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /report command."""
     keyboard = [
@@ -1027,7 +1052,14 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     except Exception as e:
         logger.error(f"Failed to update feedback message: {e}")
 
+    # Phase 9: Auto-flag sighting if negative feedback ratio is high
+    try:
+        await _check_auto_flag(sighting_id)
+    except Exception as e:
+        logger.error(f"Auto-flag check failed for {sighting_id}: {e}")
 
+
+@ban_check
 async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /recent command."""
     user_id = update.effective_user.id
@@ -1129,6 +1161,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@ban_check
 async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /mystats command - show user's reporter stats."""
     user_id = update.effective_user.id
@@ -1188,6 +1221,7 @@ async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+@ban_check
 async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /share command - generate shareable invite message."""
     bot_info = await context.bot.get_me()
@@ -1273,6 +1307,12 @@ ADMIN_COMMANDS_HELP = {
     "user <id or @username>": "Look up a user's details, subscriptions, and activity",
     "zone <zone_name>": "Look up a zone's subscribers, sightings, and top reporters",
     "log [count]": "View recent admin actions (default: 20)",
+    "ban <user_id> [reason]": "Ban a user from using the bot",
+    "unban <user_id>": "Remove a user's ban",
+    "banlist": "List all currently banned users",
+    "warn <user_id> [message]": "Send a warning to a user",
+    "delete <sighting_id> [confirm]": "Delete a sighting",
+    "review": "Show moderation queue of flagged sightings",
     "help [command]": "Show admin help (this message) or help for a specific command",
 }
 
@@ -1293,7 +1333,8 @@ ADMIN_COMMANDS_DETAILED = {
         "• Registration date, report count, badge, accuracy score\n"
         "• Subscribed zones\n"
         "• Recent sightings (last 10)\n"
-        "• Feedback received (positive/negative totals)"
+        "• Feedback received (positive/negative totals)\n"
+        "• Ban status and warning count"
     ),
     "zone": (
         "/admin zone <zone_name>\n\n"
@@ -1307,6 +1348,49 @@ ADMIN_COMMANDS_DETAILED = {
         "/admin log [count]\n\n"
         "Shows the most recent admin actions from the audit log.\n"
         "Default: 20 entries. Maximum: 100."
+    ),
+    "ban": (
+        "/admin ban <user_id> [reason]\n\n"
+        "Bans a user from the bot:\n"
+        "• Clears all their subscriptions\n"
+        "• Blocks them from /report, /subscribe, /recent, /mystats, /share\n"
+        "• Notifies the banned user\n"
+        "• Logs action to the audit trail"
+    ),
+    "unban": (
+        "/admin unban <user_id>\n\n"
+        "Removes a user's ban:\n"
+        "• User can use the bot again\n"
+        "• Resets warning count to zero\n"
+        "• Notifies the user\n"
+        "• Logs action to the audit trail"
+    ),
+    "banlist": (
+        "/admin banlist\n\nLists all currently banned users with:\n• Telegram ID\n• Ban date\n• Reason (if provided)"
+    ),
+    "warn": (
+        "/admin warn <user_id> [message]\n\n"
+        "Sends a warning to a user:\n"
+        "• Bot messages the user with the warning text\n"
+        "• Increments the user's warning count\n"
+        f"• Auto-ban after {MAX_WARNINGS} warnings (configurable via MAX_WARNINGS env var)\n"
+        "• Logs action to the audit trail"
+    ),
+    "delete": (
+        "/admin delete <sighting_id> [confirm]\n\n"
+        "Deletes a specific sighting:\n"
+        "• First call shows sighting details for review\n"
+        "• Add 'confirm' to execute the deletion\n"
+        "• Cascading delete removes associated feedback\n"
+        "• Logs action to the audit trail"
+    ),
+    "review": (
+        "/admin review\n\n"
+        "Shows the moderation queue of flagged sightings:\n"
+        "• Sightings with negative feedback > positive (3+ total votes)\n"
+        "• Sightings explicitly flagged for review\n"
+        "• Shows reporter info, feedback ratio, and sighting details\n"
+        "• Use /admin delete <id> confirm to remove bad sightings"
     ),
 }
 
@@ -1335,6 +1419,18 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await _admin_zone(update, context, args.strip())
     elif subcommand == "log":
         return await _admin_log(update, context, args.strip())
+    elif subcommand == "ban":
+        return await _admin_ban(update, context, args.strip())
+    elif subcommand == "unban":
+        return await _admin_unban(update, context, args.strip())
+    elif subcommand == "banlist":
+        return await _admin_banlist(update, context)
+    elif subcommand == "warn":
+        return await _admin_warn(update, context, args.strip())
+    elif subcommand == "delete":
+        return await _admin_delete(update, context, args.strip())
+    elif subcommand == "review":
+        return await _admin_review(update, context)
     else:
         await update.message.reply_text(f"Unknown admin command: {subcommand}\n\nUse /admin to see available commands.")
 
@@ -1452,6 +1548,10 @@ async def _admin_user(update: Update, context: ContextTypes.DEFAULT_TYPE, args: 
             created_at = created_at.replace(tzinfo=timezone.utc)
         created_str = created_at.astimezone(SGT).strftime("%Y-%m-%d %I:%M %p SGT")
 
+    # Phase 9: Check ban status and warnings
+    is_banned = await db.is_banned(user_id)
+    warning_count = await db.get_user_warnings(user_id)
+
     msg = f"👤 User Details — {user_id}\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     msg += f"Username: @{username}\n"
@@ -1467,6 +1567,8 @@ async def _admin_user(update: Update, context: ContextTypes.DEFAULT_TYPE, args: 
         msg += "Accuracy: No ratings yet\n"
 
     msg += f"Feedback received: 👍 {total_pos} / 👎 {total_neg}\n"
+    msg += f"Warnings: {warning_count}\n"
+    msg += f"Status: {'🚫 BANNED' if is_banned else '✅ Active'}\n"
 
     # Subscriptions
     subs = await db.get_user_subscriptions_list(user_id)
@@ -1615,6 +1717,340 @@ async def _admin_log(update: Update, context: ContextTypes.DEFAULT_TYPE, args: s
         msg += line + "\n"
 
     await update.message.reply_text(msg)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: Admin — User Management & Content Moderation
+# ---------------------------------------------------------------------------
+
+
+async def _admin_ban(update: Update, context: ContextTypes.DEFAULT_TYPE, args: str):
+    """Handle /admin ban <user_id> [reason]."""
+    if not args:
+        await update.message.reply_text("Usage: /admin ban <user_id> [reason]")
+        return
+
+    db = get_db()
+    admin_id = update.effective_user.id
+
+    parts = args.split(maxsplit=1)
+    target_str = parts[0]
+    reason = parts[1] if len(parts) > 1 else None
+
+    if not target_str.isdigit():
+        await update.message.reply_text("User ID must be a number.\nUsage: /admin ban <user_id> [reason]")
+        return
+
+    target_id = int(target_str)
+
+    # Prevent banning admins
+    if target_id in ADMIN_USER_IDS:
+        await update.message.reply_text("Cannot ban an admin user.")
+        return
+
+    # Check if already banned
+    if await db.is_banned(target_id):
+        await update.message.reply_text(f"User {target_id} is already banned.")
+        return
+
+    # Execute ban
+    await db.ban_user(target_id, admin_id, reason)
+
+    # Log action
+    detail = f"reason: {reason}" if reason else None
+    await db.log_admin_action(admin_id, "ban_user", target=str(target_id), detail=detail)
+
+    # Notify the banned user
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text="Your account has been restricted due to policy violations.\n"
+            "Contact the bot administrator for appeals.",
+        )
+    except Exception:
+        logger.warning(f"Could not notify banned user {target_id}")
+
+    reason_msg = f"\nReason: {reason}" if reason else ""
+    await update.message.reply_text(f"🚫 User {target_id} has been banned.{reason_msg}\nSubscriptions cleared.")
+
+
+async def _admin_unban(update: Update, context: ContextTypes.DEFAULT_TYPE, args: str):
+    """Handle /admin unban <user_id>."""
+    if not args:
+        await update.message.reply_text("Usage: /admin unban <user_id>")
+        return
+
+    db = get_db()
+    admin_id = update.effective_user.id
+
+    if not args.isdigit():
+        await update.message.reply_text("User ID must be a number.\nUsage: /admin unban <user_id>")
+        return
+
+    target_id = int(args)
+
+    was_banned = await db.unban_user(target_id)
+    if not was_banned:
+        await update.message.reply_text(f"User {target_id} is not currently banned.")
+        return
+
+    # Reset warnings on unban
+    await db.reset_warnings(target_id)
+
+    # Log action
+    await db.log_admin_action(admin_id, "unban_user", target=str(target_id))
+
+    # Notify the user
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text="Your account restriction has been lifted. You can use the bot again.\n"
+            "Use /start to set up your zones.",
+        )
+    except Exception:
+        logger.warning(f"Could not notify unbanned user {target_id}")
+
+    await update.message.reply_text(f"✅ User {target_id} has been unbanned. Warnings reset.")
+
+
+async def _admin_banlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /admin banlist."""
+    db = get_db()
+    admin_id = update.effective_user.id
+
+    banned = await db.get_banned_users()
+
+    if not banned:
+        await update.message.reply_text("🚫 Ban List\n\nNo users are currently banned.")
+        return
+
+    msg = f"🚫 Ban List ({len(banned)} user(s))\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+    for entry in banned:
+        banned_at = entry.get("banned_at")
+        if hasattr(banned_at, "strftime"):
+            if banned_at.tzinfo is None:
+                banned_at = banned_at.replace(tzinfo=timezone.utc)
+            time_str = banned_at.astimezone(SGT).strftime("%Y-%m-%d %I:%M %p SGT")
+        else:
+            time_str = str(banned_at)
+
+        reason = entry.get("reason") or "No reason given"
+        msg += f"• {entry['telegram_id']}\n"
+        msg += f"  Banned: {time_str}\n"
+        msg += f"  By: {entry['banned_by']}\n"
+        msg += f"  Reason: {reason}\n\n"
+
+    await update.message.reply_text(msg)
+
+    await db.log_admin_action(admin_id, "view_banlist")
+
+
+async def _admin_warn(update: Update, context: ContextTypes.DEFAULT_TYPE, args: str):
+    """Handle /admin warn <user_id> [message]."""
+    if not args:
+        await update.message.reply_text("Usage: /admin warn <user_id> [message]")
+        return
+
+    db = get_db()
+    admin_id = update.effective_user.id
+
+    parts = args.split(maxsplit=1)
+    target_str = parts[0]
+    warning_message = parts[1] if len(parts) > 1 else "You have received a warning for violating community guidelines."
+
+    if not target_str.isdigit():
+        await update.message.reply_text("User ID must be a number.\nUsage: /admin warn <user_id> [message]")
+        return
+
+    target_id = int(target_str)
+
+    # Ensure user exists
+    user = await db.get_user_details(target_id)
+    if not user:
+        await update.message.reply_text(f"User not found: {target_id}")
+        return
+
+    # Increment warning count
+    new_count = await db.increment_warnings(target_id)
+
+    # Log action
+    await db.log_admin_action(
+        admin_id, "warn_user", target=str(target_id), detail=f"warning {new_count}: {warning_message[:100]}"
+    )
+
+    # Send warning to user
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text=f"⚠️ Warning from ParkWatch SG\n\n{warning_message}\n\n"
+            f"This is warning {new_count} of {MAX_WARNINGS}. "
+            f"Repeated violations may result in a ban.",
+        )
+        notified = True
+    except Exception:
+        logger.warning(f"Could not notify warned user {target_id}")
+        notified = False
+
+    # Check auto-ban escalation
+    if MAX_WARNINGS > 0 and new_count >= MAX_WARNINGS:
+        await db.ban_user(target_id, admin_id, reason=f"Auto-ban: {new_count} warnings reached")
+        await db.log_admin_action(
+            admin_id, "auto_ban", target=str(target_id), detail=f"Warning count reached {MAX_WARNINGS}"
+        )
+        with contextlib.suppress(Exception):
+            await context.bot.send_message(
+                chat_id=target_id,
+                text="Your account has been restricted due to repeated violations.\n"
+                "Contact the bot administrator for appeals.",
+            )
+        await update.message.reply_text(
+            f"⚠️ Warning {new_count} sent to user {target_id}.\n"
+            f"🚫 AUTO-BAN triggered ({new_count}/{MAX_WARNINGS} warnings). User has been banned."
+        )
+    else:
+        notify_status = "Notification sent." if notified else "Could not notify user."
+        await update.message.reply_text(
+            f"⚠️ Warning {new_count}/{MAX_WARNINGS} sent to user {target_id}.\n{notify_status}"
+        )
+
+
+async def _admin_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, args: str):
+    """Handle /admin delete <sighting_id> [confirm]."""
+    if not args:
+        await update.message.reply_text("Usage: /admin delete <sighting_id> [confirm]")
+        return
+
+    db = get_db()
+    admin_id = update.effective_user.id
+
+    parts = args.split(maxsplit=1)
+    sighting_id = parts[0]
+    confirm = len(parts) > 1 and parts[1].lower() == "confirm"
+
+    # Look up the sighting
+    sighting = await db.get_sighting(sighting_id)
+    if not sighting:
+        await update.message.reply_text(f"Sighting not found: {sighting_id}")
+        return
+
+    if not confirm:
+        # Show details and ask for confirmation
+        reported_at = sighting["reported_at"]
+        if hasattr(reported_at, "strftime"):
+            if reported_at.tzinfo is None:
+                reported_at = reported_at.replace(tzinfo=timezone.utc)
+            time_str = reported_at.astimezone(SGT).strftime("%Y-%m-%d %I:%M %p SGT")
+        else:
+            time_str = str(reported_at)
+
+        desc = sighting.get("description") or "No description"
+        pos = sighting.get("feedback_positive", 0)
+        neg = sighting.get("feedback_negative", 0)
+
+        msg = "🗑️ Delete Sighting — Confirmation Required\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        msg += f"ID: {sighting_id}\n"
+        msg += f"Zone: {sighting['zone']}\n"
+        msg += f"Time: {time_str}\n"
+        msg += f"Description: {desc}\n"
+        msg += f"Reporter: {sighting.get('reporter_name', 'Unknown')} ({sighting['reporter_id']})\n"
+        msg += f"Feedback: 👍 {pos} / 👎 {neg}\n"
+        msg += f"\nTo confirm deletion, run:\n/admin delete {sighting_id} confirm"
+
+        await update.message.reply_text(msg)
+        return
+
+    # Execute deletion
+    deleted = await db.delete_sighting(sighting_id)
+    if not deleted:
+        await update.message.reply_text(f"Sighting not found: {sighting_id}")
+        return
+
+    # Log action
+    await db.log_admin_action(
+        admin_id,
+        "delete_sighting",
+        target=sighting_id,
+        detail=f"zone={deleted['zone']}, reporter={deleted['reporter_id']}",
+    )
+
+    await update.message.reply_text(f"🗑️ Sighting {sighting_id} has been deleted.\nZone: {deleted['zone']}")
+
+
+async def _admin_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /admin review — show moderation queue of flagged sightings."""
+    db = get_db()
+    admin_id = update.effective_user.id
+
+    flagged = await db.get_flagged_sightings(20)
+    low_accuracy = await db.get_low_accuracy_reporters(max_accuracy=0.5, min_feedback=5)
+
+    if not flagged and not low_accuracy:
+        await update.message.reply_text("📋 Moderation Queue\n\nNo items require review.")
+        return
+
+    msg = "📋 Moderation Queue\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━\n"
+
+    if flagged:
+        msg += f"\n🚩 Flagged Sightings ({len(flagged)})\n\n"
+        for s in flagged[:10]:  # Limit to 10 for message size
+            reported_at = s["reported_at"]
+            if hasattr(reported_at, "strftime"):
+                if reported_at.tzinfo is None:
+                    reported_at = reported_at.replace(tzinfo=timezone.utc)
+                time_str = reported_at.astimezone(SGT).strftime("%m/%d %I:%M %p")
+            else:
+                time_str = str(reported_at)
+
+            desc = s.get("description") or "No description"
+            pos = s.get("feedback_positive", 0)
+            neg = s.get("feedback_negative", 0)
+            total = pos + neg
+
+            msg += f"• {s['zone']} — {time_str}\n"
+            msg += f"  ID: {s['id'][:12]}...\n"
+            msg += f"  {desc[:50]}\n"
+            msg += f"  Reporter: {s.get('reporter_name', '?')} ({s['reporter_id']})\n"
+            msg += f"  Feedback: 👍 {pos} / 👎 {neg}"
+            if total > 0:
+                msg += f" ({neg / total * 100:.0f}% negative)"
+            msg += "\n\n"
+
+    if low_accuracy:
+        msg += f"\n⚠️ Low-Accuracy Reporters ({len(low_accuracy)})\n\n"
+        for r in low_accuracy[:10]:
+            msg += f"• User {r['reporter_id']}: {r['accuracy'] * 100:.0f}% accuracy "
+            msg += f"(👍{r['total_positive']}/👎{r['total_negative']}, {r['sighting_count']} sightings)\n"
+
+    msg += "\nUse /admin delete <id> confirm to remove a sighting."
+    msg += "\nUse /admin ban <user_id> [reason] to ban a user."
+    msg += "\nUse /admin warn <user_id> [message] to warn a user."
+
+    await update.message.reply_text(msg)
+
+    await db.log_admin_action(admin_id, "view_review_queue")
+
+
+async def _check_auto_flag(sighting_id: str) -> None:
+    """Check if a sighting should be auto-flagged after feedback update.
+
+    Flags when negative feedback ratio exceeds 70% with at least 3 votes.
+    """
+    db = get_db()
+    sighting = await db.get_sighting(sighting_id)
+    if not sighting:
+        return
+
+    pos = sighting.get("feedback_positive", 0)
+    neg = sighting.get("feedback_negative", 0)
+    total = pos + neg
+
+    if total >= 3 and neg / total > 0.7:
+        await db.flag_sighting(sighting_id)
+        logger.info(f"Auto-flagged sighting {sighting_id}: {neg}/{total} negative feedback")
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

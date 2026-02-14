@@ -69,7 +69,7 @@ class TestAdminConfig:
     def test_bot_version_updated(self):
         from config import BOT_VERSION
 
-        assert BOT_VERSION == "1.2.0"
+        assert BOT_VERSION == "1.3.0"
 
 
 # ---------------------------------------------------------------------------
