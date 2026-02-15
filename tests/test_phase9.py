@@ -553,7 +553,7 @@ class TestBanCheck:
         mock_db = MagicMock()
         mock_db.is_banned = AsyncMock(return_value=True)
 
-        with patch("bot.main.get_db", return_value=mock_db):
+        with patch("bot.services.moderation.get_db", return_value=mock_db):
             asyncio.get_event_loop().run_until_complete(decorated(update, MagicMock()))
 
         assert not called
@@ -579,7 +579,7 @@ class TestBanCheck:
         mock_db = MagicMock()
         mock_db.is_banned = AsyncMock(return_value=False)
 
-        with patch("bot.main.get_db", return_value=mock_db):
+        with patch("bot.services.moderation.get_db", return_value=mock_db):
             asyncio.get_event_loop().run_until_complete(decorated(update, MagicMock()))
 
         assert called
@@ -613,7 +613,7 @@ class TestAutoFlag:
         # Set 1 positive, 3 negative (75% negative)
         await db.update_feedback_counts("auto1", 1, 3)
 
-        with patch("bot.main.get_db", return_value=db):
+        with patch("bot.services.moderation.get_db", return_value=db):
             await _check_auto_flag("auto1")
 
         sighting = await db.get_sighting("auto1")
@@ -641,7 +641,7 @@ class TestAutoFlag:
         # Set 2 positive, 2 negative (50% negative — below 70%)
         await db.update_feedback_counts("auto2", 2, 2)
 
-        with patch("bot.main.get_db", return_value=db):
+        with patch("bot.services.moderation.get_db", return_value=db):
             await _check_auto_flag("auto2")
 
         sighting = await db.get_sighting("auto2")
@@ -669,7 +669,7 @@ class TestAutoFlag:
         # Only 2 votes (100% negative, but not enough votes)
         await db.update_feedback_counts("auto3", 0, 2)
 
-        with patch("bot.main.get_db", return_value=db):
+        with patch("bot.services.moderation.get_db", return_value=db):
             await _check_auto_flag("auto3")
 
         sighting = await db.get_sighting("auto3")
@@ -680,7 +680,7 @@ class TestAutoFlag:
         """Should handle non-existent sighting gracefully."""
         from bot.main import _check_auto_flag
 
-        with patch("bot.main.get_db", return_value=db):
+        with patch("bot.services.moderation.get_db", return_value=db):
             await _check_auto_flag("nonexistent")  # Should not raise
 
 

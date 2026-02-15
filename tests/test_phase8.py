@@ -97,7 +97,7 @@ class TestAdminOnly:
 
         import asyncio
 
-        with patch("bot.main.ADMIN_USER_IDS", {123456}):
+        with patch("bot.handlers.admin.ADMIN_USER_IDS", {123456}):
             asyncio.get_event_loop().run_until_complete(decorated(update, MagicMock()))
 
         assert not called
@@ -122,7 +122,7 @@ class TestAdminOnly:
 
         import asyncio
 
-        with patch("bot.main.ADMIN_USER_IDS", {123456}):
+        with patch("bot.handlers.admin.ADMIN_USER_IDS", {123456}):
             asyncio.get_event_loop().run_until_complete(decorated(update, MagicMock()))
 
         assert called
