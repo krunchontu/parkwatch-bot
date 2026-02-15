@@ -61,7 +61,7 @@ Phases 1 through 9 addressed all critical bugs, UX issues, data persistence, rob
 8. **Config externalization** — All tunable values in `config.py` with env var overrides
 9. **Timezone-safe datetime** — All `datetime.now(timezone.utc)` throughout codebase
 10. **Proper Python packaging** — Runs as `python -m bot.main`, relative imports, no sys.path hacks
-11. **Test coverage** — 217 tests (48 unit + 57 integration + 22 infrastructure + 43 admin + 47 moderation) with 100% pass rate
+11. **Test coverage** — 257 tests (48 unit + 57 integration + 22 infrastructure + 43 admin + 47 moderation + 40 Phase 10) with 100% pass rate
 12. **CI pipeline** — Automated lint, type check, and test on every push/PR via GitHub Actions
 13. **Code quality** — All ruff lint and format checks pass, mypy type checking clean
 14. **Production infrastructure** — Webhook mode, health check endpoint, structured JSON logging, Alembic migrations, Sentry integration

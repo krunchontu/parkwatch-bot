@@ -133,12 +133,23 @@ For detailed user flows, message formats, reputation rules, and zone lists, see 
 ```
 parkwatch-bot/
 ├── bot/
-│   ├── __init__.py              # Package marker
-│   ├── main.py                  # Bot logic, handlers, conversation flow
+│   ├── main.py                  # Application wiring, handler registration, entrypoint
 │   ├── database.py              # Dual-driver DB abstraction (SQLite/PostgreSQL)
+│   ├── zones.py                 # Zone data (80 zones, 6 regions, coordinates)
+│   ├── utils.py                 # Pure helpers (haversine, badges, sanitization)
+│   ├── handlers/
+│   │   ├── user.py              # User commands (/start, /subscribe, /help, etc.)
+│   │   ├── report.py            # Report flow (ConversationHandler), /recent
+│   │   └── admin.py             # Admin commands (/admin router + subcommands)
+│   ├── services/
+│   │   ├── notifications.py     # Alert broadcast with blocked-user cleanup
+│   │   └── moderation.py        # ban_check decorator, auto-flag logic
+│   ├── ui/
+│   │   ├── keyboards.py         # Keyboard builders (zone selection, menus)
+│   │   └── messages.py          # Message builders (alert formatting)
 │   ├── health.py                # Health check HTTP server (GET /health)
 │   └── logging_config.py        # Structured logging (text/JSON modes)
-├── tests/                       # 217 tests (unit, integration, infrastructure)
+├── tests/                       # 257 tests (unit, integration, infrastructure, admin, moderation, UX)
 ├── alembic/                     # Database migration scripts (3 migrations)
 ├── config.py                    # Environment configuration
 ├── pyproject.toml               # Project metadata, deps, tool configs
@@ -151,7 +162,7 @@ parkwatch-bot/
 ```bash
 pip install -e ".[dev]"
 
-pytest                        # all 217 tests
+pytest                        # all 257 tests
 pytest -v                     # verbose output
 pytest tests/test_unit.py     # unit tests only (48 tests)
 pytest tests/test_database.py # integration tests only (57 tests)
