@@ -9,9 +9,11 @@ from telegram import Update
 from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
-from config import ADMIN_USER_IDS, MAX_WARNINGS
+from config import ADMIN_USER_IDS
 
 from ..database import get_db
+from ..services.maintenance import is_maintenance_enabled
+from ..services.runtime_settings import RuntimeSettingsError, get_runtime_settings
 from ..utils import SGT, get_accuracy_indicator, get_reporter_badge
 from ..zones import ZONES
 
@@ -49,6 +51,12 @@ ADMIN_COMMANDS_HELP = {
     "review": "Show moderation queue of flagged sightings",
     "announce all <msg>": "Broadcast a message to all registered users",
     "announce zone <zone> <msg>": "Broadcast to subscribers of a specific zone",
+    "config [<key> <value>|reset <key>]": "View/update runtime settings",
+    "maintenance on|off [message]": "Toggle maintenance mode",
+    "purge sightings [days]": "Purge old sightings manually",
+    "purge sightings zone <zone> [days]": "Purge old sightings for one zone",
+    "purge user <user_id>": "Purge user data (preview + confirm)",
+    "export stats [csv|json]": "Export non-PII operational stats",
     "help [command]": "Show admin help (this message) or help for a specific command",
 }
 
@@ -109,7 +117,7 @@ ADMIN_COMMANDS_DETAILED = {
         "Sends a warning to a user:\n"
         "\u2022 Bot messages the user with the warning text\n"
         "\u2022 Increments the user's warning count\n"
-        f"\u2022 Auto-ban after {MAX_WARNINGS} warnings (configurable via MAX_WARNINGS env var)\n"
+        "\u2022 Auto-ban after MAX_WARNINGS warnings (runtime configurable)\n"
         "\u2022 Logs action to the audit trail"
     ),
     "delete": (
@@ -140,6 +148,10 @@ ADMIN_COMMANDS_DETAILED = {
         "\u2022 Rate-limited delivery (20 msgs/sec)\n"
         "\u2022 Delivery report with sent/failed/blocked counts"
     ),
+    "config": "/admin config\n/admin config <KEY> <VALUE>\n/admin config reset <KEY>",
+    "maintenance": "/admin maintenance on [message]\n/admin maintenance off",
+    "purge": "/admin purge sightings [days]\n/admin purge sightings zone <zone> [days]\n/admin purge user <id>",
+    "export": "/admin export stats [csv|json]",
 }
 
 
@@ -181,6 +193,14 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await _admin_review(update, context)
     elif subcommand == "announce":
         return await _admin_announce(update, context, args.strip())
+    elif subcommand == "config":
+        return await _admin_config(update, context, args.strip())
+    elif subcommand == "maintenance":
+        return await _admin_maintenance(update, context, args.strip())
+    elif subcommand == "purge":
+        return await _admin_purge(update, context, args.strip())
+    elif subcommand == "export":
+        return await _admin_export(update, context, args.strip())
     else:
         await update.message.reply_text(f"Unknown admin command: {subcommand}\n\nUse /admin to see available commands.")
 
@@ -243,6 +263,10 @@ async def _admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for i, z in enumerate(top_sight_zones, 1):
             msg += f"  {i}. {z['zone']} ({z['sighting_count']} sightings)\n"
         msg += "\n"
+
+    maintenance = await is_maintenance_enabled()
+    msg += "\U0001f6e0\ufe0f Operations\n"
+    msg += f"  Maintenance mode: {'ON' if maintenance else 'OFF'}\n\n"
 
     msg += "\U0001f4ca Feedback\n"
     msg += f"  \U0001f44d Positive: {stats['feedback_positive']}\n"
@@ -626,12 +650,14 @@ async def _admin_warn(update: Update, context: ContextTypes.DEFAULT_TYPE, args: 
         admin_id, "warn_user", target=str(target_id), detail=f"warning {new_count}: {warning_message[:100]}"
     )
 
+    max_warnings = await get_runtime_settings().get("MAX_WARNINGS")
+
     # Send warning to user
     try:
         await context.bot.send_message(
             chat_id=target_id,
             text=f"\u26a0\ufe0f Warning from ParkWatch SG\n\n{warning_message}\n\n"
-            f"This is warning {new_count} of {MAX_WARNINGS}. "
+            f"This is warning {new_count} of {max_warnings}. "
             f"Repeated violations may result in a ban.",
         )
         notified = True
@@ -640,10 +666,11 @@ async def _admin_warn(update: Update, context: ContextTypes.DEFAULT_TYPE, args: 
         notified = False
 
     # Check auto-ban escalation
-    if MAX_WARNINGS > 0 and new_count >= MAX_WARNINGS:
+    max_warnings = await get_runtime_settings().get("MAX_WARNINGS")
+    if max_warnings > 0 and new_count >= max_warnings:
         await db.ban_user(target_id, admin_id, reason=f"Auto-ban: {new_count} warnings reached")
         await db.log_admin_action(
-            admin_id, "auto_ban", target=str(target_id), detail=f"Warning count reached {MAX_WARNINGS}"
+            admin_id, "auto_ban", target=str(target_id), detail=f"Warning count reached {max_warnings}"
         )
         with contextlib.suppress(Exception):
             await context.bot.send_message(
@@ -653,12 +680,12 @@ async def _admin_warn(update: Update, context: ContextTypes.DEFAULT_TYPE, args: 
             )
         await update.message.reply_text(
             f"\u26a0\ufe0f Warning {new_count} sent to user {target_id}.\n"
-            f"\U0001f6ab AUTO-BAN triggered ({new_count}/{MAX_WARNINGS} warnings). User has been banned."
+            f"\U0001f6ab AUTO-BAN triggered ({new_count}/{max_warnings} warnings). User has been banned."
         )
     else:
         notify_status = "Notification sent." if notified else "Could not notify user."
         await update.message.reply_text(
-            f"\u26a0\ufe0f Warning {new_count}/{MAX_WARNINGS} sent to user {target_id}.\n{notify_status}"
+            f"\u26a0\ufe0f Warning {new_count}/{max_warnings} sent to user {target_id}.\n{notify_status}"
         )
 
 
@@ -924,3 +951,220 @@ async def _admin_announce(update: Update, context: ContextTypes.DEFAULT_TYPE, ar
         f"To send, run: /admin announce confirm"
     )
     await update.message.reply_text(preview)
+
+
+async def _admin_config(update: Update, context: ContextTypes.DEFAULT_TYPE, args: str):
+    """Handle /admin config operations."""
+    db = get_db()
+    admin_id = update.effective_user.id
+    settings = get_runtime_settings()
+
+    if not args:
+        rows = await settings.list_effective()
+        msg = "⚙️ Runtime Settings\n\n"
+        for row in rows:
+            msg += f"{row['key']} = {row['value']} ({row['source']})\n"
+        await update.message.reply_text(msg)
+        await db.log_admin_action(admin_id, "config_list")
+        return
+
+    parts = args.split(maxsplit=2)
+    if parts[0].lower() == "reset":
+        if len(parts) < 2:
+            await update.message.reply_text("Usage: /admin config reset <KEY>")
+            return
+        key = parts[1].strip().upper()
+        try:
+            old_value = await settings.get(key)
+            default_value = await settings.reset_override(key)
+        except RuntimeSettingsError as exc:
+            await update.message.reply_text(str(exc))
+            return
+        detail = f"{key}: {old_value} -> {default_value}"
+        await db.log_admin_action(admin_id, "config_reset", target=key, detail=detail)
+        await update.message.reply_text(f"✅ Reset {key}. Effective value: {default_value}")
+        return
+
+    if len(parts) < 2:
+        await update.message.reply_text("Usage: /admin config <KEY> <VALUE>")
+        return
+
+    key = parts[0].strip().upper()
+    value = parts[1] if len(parts) == 2 else parts[1] + " " + parts[2]
+
+    try:
+        old_value, new_value = await settings.set_override(key, value, admin_id)
+    except RuntimeSettingsError as exc:
+        await update.message.reply_text(str(exc))
+        return
+
+    detail = f"{key}: {old_value} -> {new_value}"
+    await db.log_admin_action(admin_id, "config_set", target=key, detail=detail)
+    await update.message.reply_text(f"✅ Updated {key}: {old_value} → {new_value}")
+
+
+async def _admin_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE, args: str):
+    """Handle /admin maintenance on|off [message]."""
+    db = get_db()
+    admin_id = update.effective_user.id
+    settings = get_runtime_settings()
+
+    if not args:
+        await update.message.reply_text("Usage: /admin maintenance on [message]\n/admin maintenance off")
+        return
+
+    parts = args.split(maxsplit=1)
+    action = parts[0].lower()
+
+    if action == "off":
+        await settings.set_override("MAINTENANCE_MODE", "false", admin_id)
+        await db.log_admin_action(admin_id, "maintenance_off", detail="mode=false")
+        await update.message.reply_text("✅ Maintenance mode disabled.")
+        return
+
+    if action != "on":
+        await update.message.reply_text("Usage: /admin maintenance on [message]\n/admin maintenance off")
+        return
+
+    message = parts[1].strip() if len(parts) > 1 else ""
+    announce_prefix = "--announce "
+
+    if message.lower() == "confirm":
+        pending = context.user_data.pop("pending_maintenance_announce", None)
+        if not pending:
+            await update.message.reply_text("No pending maintenance announcement.")
+            return
+        sent = 0
+        for uid in pending["recipient_ids"]:
+            with contextlib.suppress(Exception):
+                await context.bot.send_message(chat_id=uid, text=f"📣 {pending['message']}")
+                sent += 1
+        await settings.set_override("MAINTENANCE_MODE", "true", admin_id)
+        await settings.set_override("MAINTENANCE_MESSAGE", pending["message"], admin_id)
+        await db.log_admin_action(admin_id, "maintenance_on", detail=f"announce_sent={sent}")
+        await update.message.reply_text(f"✅ Maintenance mode enabled. Announcement sent to {sent} users.")
+        return
+
+    if message.startswith(announce_prefix):
+        ann_message = message[len(announce_prefix) :].strip()
+        if not ann_message:
+            await update.message.reply_text("Usage: /admin maintenance on --announce <message>")
+            return
+        recipients = await db.get_all_user_ids()
+        context.user_data["pending_maintenance_announce"] = {
+            "message": ann_message,
+            "recipient_ids": recipients,
+        }
+        await update.message.reply_text(
+            f"📣 Maintenance announcement preview\nRecipients: {len(recipients)}\n\n{ann_message}\n\n"
+            "Run /admin maintenance on confirm to broadcast and enable maintenance."
+        )
+        return
+
+    if message:
+        await settings.set_override("MAINTENANCE_MESSAGE", message, admin_id)
+    await settings.set_override("MAINTENANCE_MODE", "true", admin_id)
+    await db.log_admin_action(admin_id, "maintenance_on", detail=f"message={message[:120] if message else ''}")
+    await update.message.reply_text("✅ Maintenance mode enabled.")
+
+
+async def _admin_purge(update: Update, context: ContextTypes.DEFAULT_TYPE, args: str):
+    """Handle /admin purge commands with preview + confirm flow."""
+    db = get_db()
+    admin_id = update.effective_user.id
+    if not args:
+        await update.message.reply_text(
+            "Usage:\n/admin purge sightings [days]\n/admin purge sightings zone <zone> [days]\n/admin purge user <user_id>"
+        )
+        return
+
+    if args.strip().lower() == "confirm":
+        pending = context.user_data.pop("pending_purge", None)
+        if not pending:
+            await update.message.reply_text("No pending purge operation.")
+            return
+        if pending["type"] == "sightings":
+            deleted = await db.purge_sightings_older_than(pending["days"], zone=pending.get("zone"))
+            await db.log_admin_action(
+                admin_id,
+                "purge_sightings",
+                detail=f"days={pending['days']}, zone={pending.get('zone')}, deleted={deleted}",
+            )
+            await update.message.reply_text(f"🗑️ Purged {deleted} sightings.")
+            return
+        if pending["type"] == "user":
+            result = await db.purge_user_data(pending["user_id"])
+            await db.log_admin_action(
+                admin_id,
+                "purge_user",
+                target=str(pending["user_id"]),
+                detail=f"feedback_given_deleted={result['feedback_given_deleted']}",
+            )
+            await update.message.reply_text(f"🗑️ Purged user {pending['user_id']} data.")
+            return
+
+    parts = args.split()
+    if parts[0].lower() == "sightings":
+        zone = None
+        days = 30
+        if len(parts) >= 2 and parts[1].lower() == "zone":
+            if len(parts) < 3:
+                await update.message.reply_text("Usage: /admin purge sightings zone <zone_name> [days]")
+                return
+            zone = parts[2]
+            if len(parts) >= 4 and parts[3].isdigit():
+                days = int(parts[3])
+        elif len(parts) >= 2 and parts[1].isdigit():
+            days = int(parts[1])
+
+        context.user_data["pending_purge"] = {"type": "sightings", "zone": zone, "days": days}
+        scope = f"zone={zone}" if zone else "all zones"
+        await update.message.reply_text(
+            f"⚠️ Preview: purge sightings older than {days} day(s) in {scope}.\nRun /admin purge confirm to execute."
+        )
+        return
+
+    if parts[0].lower() == "user":
+        if len(parts) < 2 or not parts[1].isdigit():
+            await update.message.reply_text("Usage: /admin purge user <user_id>")
+            return
+        user_id = int(parts[1])
+        context.user_data["pending_purge"] = {"type": "user", "user_id": user_id}
+        await update.message.reply_text(
+            f"⚠️ Preview: purge all data for user {user_id}.\nRun /admin purge confirm to execute."
+        )
+        return
+
+    await update.message.reply_text(
+        "Usage:\n/admin purge sightings [days]\n/admin purge sightings zone <zone> [days]\n/admin purge user <user_id>"
+    )
+
+
+async def _admin_export(update: Update, context: ContextTypes.DEFAULT_TYPE, args: str):
+    """Handle /admin export stats [csv|json] with preview + confirm."""
+    db = get_db()
+    admin_id = update.effective_user.id
+    parts = args.split()
+    if not parts or parts[0].lower() != "stats":
+        await update.message.reply_text("Usage: /admin export stats [csv|json]")
+        return
+
+    format_type = "csv"
+    if len(parts) > 1:
+        format_type = parts[1].lower()
+        if format_type not in {"csv", "json"}:
+            await update.message.reply_text("Format must be csv or json.")
+            return
+
+    if len(parts) > 2 and parts[2].lower() == "confirm":
+        data = await db.export_stats(format_type)
+        await db.log_admin_action(admin_id, "export_stats", detail=f"format={format_type}")
+        await update.message.reply_text(
+            f"📤 Export ({format_type.upper()}):\n<pre>{data[:3500]}</pre>", parse_mode="HTML"
+        )
+        return
+
+    await update.message.reply_text(
+        f"Preview: export non-PII stats in {format_type.upper()} format.\n"
+        f"Run /admin export stats {format_type} confirm to generate."
+    )

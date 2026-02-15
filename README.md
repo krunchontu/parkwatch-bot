@@ -86,12 +86,25 @@ Require `ADMIN_USER_IDS` to be set. Non-admin users receive a generic "Unknown c
 | `/admin ban <user_id> [reason]` | Ban a user (clears subscriptions, notifies user) |
 | `/admin unban <user_id>` | Remove a user's ban and reset warnings |
 | `/admin banlist` | List all currently banned users |
-| `/admin warn <user_id> [message]` | Send a warning (auto-ban after 3 warnings) |
+| `/admin warn <user_id> [message]` | Send a warning (auto-ban threshold is runtime configurable) |
 | `/admin delete <sighting_id> [confirm]` | Delete a sighting (two-step confirmation) |
 | `/admin review` | View moderation queue of flagged sightings |
 | `/admin announce all <msg>` | Broadcast announcement to all registered users |
 | `/admin announce zone <z> <msg>` | Broadcast announcement to zone subscribers |
 | `/admin help [command]` | Detailed help for a specific admin command |
+| `/admin config` | List runtime-configurable settings and effective values |
+| `/admin config <key> <value>` | Update runtime setting with strict type validation |
+| `/admin config reset <key>` | Reset runtime override back to default |
+| `/admin maintenance on [message]` | Enable maintenance mode (optional custom message) |
+| `/admin maintenance on --announce <msg>` | Preview maintenance broadcast and require confirm |
+| `/admin maintenance on confirm` | Send pending maintenance broadcast and enable mode |
+| `/admin maintenance off` | Disable maintenance mode |
+| `/admin purge sightings [days]` | Preview+confirm manual sightings purge |
+| `/admin purge sightings zone <z> [days]` | Preview+confirm zone-scoped sightings purge |
+| `/admin purge user <user_id>` | Preview+confirm GDPR-style user data purge |
+| `/admin purge confirm` | Execute pending purge operation |
+| `/admin export stats [csv\|json]` | Preview stats export (non-PII, CSV default) |
+| `/admin export stats [csv\|json] confirm` | Generate export payload |
 
 For detailed user flows, message formats, reputation rules, and zone lists, see [`parking_warden_bot_spec.md`](parking_warden_bot_spec.md).
 

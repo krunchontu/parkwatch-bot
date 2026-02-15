@@ -7,11 +7,14 @@ Pending Actions:
 Blockers: None identified
 
 [UPDATE]
-Phase: 1.3
+Phase: 1.6
 Completed:
-- Verified the user concern: Phase 14 was referenced but not explicitly defined in roadmap docs.
-- Added explicit Phase 14 (i18n) section to `IMPROVEMENTS.md`.
-- Added matching Phase 14 section in `parking_warden_bot_spec.md` and aligned README phase range text.
+- Implemented Phase 11.3 runtime configuration with `config_overrides` migration, DB methods, typed runtime settings service, and `/admin config` command set.
+- Implemented Phase 11.1 maintenance mode with persisted toggles, user-flow gating, report-conversation cancellation, inline query blocking, health degraded status, job soft-pause, and admin visibility.
+- Implemented Phase 11.2 data management with preview+confirm purge commands (global/zone/user) and stats export (CSV default, JSON optional).
+- Added Phase 11 tests (`runtime_config`, `maintenance`, `data_management`, `migration`) and synchronized docs/memlog artifacts.
+- Fixed stale Phase 11 wording in `parking_warden_bot_spec.md` heading to reflect completed status.
 Next Steps:
-1. Keep phase references synchronized when moving items between phases.
-2. Implement Phase 11.3 before downstream roadmap execution.
+1. Validate behavior in staging Telegram environment for admin command UX and long-message export rendering.
+2. If accepted, proceed to prioritized Phase 12 sequence.
+3. Keep runtime setting allowlist synchronized with future mutable config additions.

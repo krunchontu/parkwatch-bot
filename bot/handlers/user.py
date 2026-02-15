@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from config import ADMIN_USER_IDS
 
 from ..database import get_db
+from ..services.maintenance import maintenance_check
 from ..services.moderation import ban_check
 from ..ui.keyboards import build_zone_keyboard
 from ..utils import get_accuracy_indicator, get_reporter_badge
@@ -17,6 +18,7 @@ from ..zones import ZONES
 logger = logging.getLogger(__name__)
 
 
+@maintenance_check
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command — show quick-action menu."""
     keyboard = [
@@ -36,6 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@maintenance_check
 async def handle_start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle quick-action button clicks from the /start menu."""
     query = update.callback_query
@@ -82,6 +85,7 @@ async def handle_start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+@maintenance_check
 async def handle_region_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle region button click."""
     query = update.callback_query
@@ -102,6 +106,7 @@ async def handle_region_selection(update: Update, context: ContextTypes.DEFAULT_
     )
 
 
+@maintenance_check
 async def handle_zone_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle zone button click - toggle subscription."""
     query = update.callback_query
@@ -136,6 +141,7 @@ async def handle_zone_selection(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
 
+@maintenance_check
 async def handle_zone_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Done button from zone selection."""
     query = update.callback_query
@@ -159,6 +165,7 @@ async def handle_zone_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("You're not subscribed to any zones yet.\nUse /start to select zones.")
 
 
+@maintenance_check
 async def handle_back_to_regions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Go back to region selection."""
     query = update.callback_query
@@ -170,6 +177,7 @@ async def handle_back_to_regions(update: Update, context: ContextTypes.DEFAULT_T
 
 
 @ban_check
+@maintenance_check
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /subscribe command."""
     keyboard = [[InlineKeyboardButton(region["name"], callback_data=f"region_{key}")] for key, region in ZONES.items()]
@@ -178,6 +186,7 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @ban_check
+@maintenance_check
 async def myzones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /myzones command."""
     user_id = update.effective_user.id
@@ -193,6 +202,7 @@ async def myzones(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @ban_check
+@maintenance_check
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /unsubscribe command."""
     user_id = update.effective_user.id
@@ -215,6 +225,7 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@maintenance_check
 async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle unsubscribe button clicks."""
     query = update.callback_query
@@ -264,6 +275,7 @@ async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFA
     )
 
 
+@maintenance_check
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command."""
     await update.message.reply_text(
@@ -291,6 +303,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @ban_check
+@maintenance_check
 async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /mystats command - show user's reporter stats."""
     user_id = update.effective_user.id
@@ -351,6 +364,7 @@ async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @ban_check
+@maintenance_check
 async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /share command - generate shareable invite message."""
     bot_info = await context.bot.get_me()
@@ -409,6 +423,7 @@ _Shared by {user_name}_"""
 
 
 @ban_check
+@maintenance_check
 async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /feedback <message> — relay user text to all admin users."""
     text = update.message.text

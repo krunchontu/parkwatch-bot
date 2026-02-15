@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 
 from config import BOT_VERSION
 
+from .services.runtime_settings import get_runtime_settings
+
 logger = logging.getLogger(__name__)
 
 _server: asyncio.AbstractServer | None = None
@@ -27,11 +29,17 @@ async def start_health_server(port: int, run_mode: str = "polling") -> None:
             request_line = data.decode(errors="replace").split("\r\n")[0] if data else ""
 
             if request_line.startswith("GET /health"):
+                maintenance_mode = bool(await get_runtime_settings().get("MAINTENANCE_MODE"))
+                maintenance_msg = str(await get_runtime_settings().get("MAINTENANCE_MESSAGE"))
                 body = json.dumps(
                     {
-                        "status": "ok",
+                        "status": "degraded" if maintenance_mode else "ok",
                         "version": BOT_VERSION,
                         "mode": run_mode,
+                        "maintenance": {
+                            "enabled": maintenance_mode,
+                            "message": maintenance_msg,
+                        },
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 )
