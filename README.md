@@ -2,53 +2,19 @@
 
 Crowdsourced parking warden alerts for Singapore drivers. Get notified when wardens are spotted in your area — never get a parking ticket again.
 
+**80 zones** across 6 regions · **real-time alerts** · **GPS-aware duplicate detection** · **community feedback & reputation** · **admin moderation suite**
+
 ---
 
 ## Table of Contents
 
-- [Features](#features)
 - [Quick Start](#quick-start)
-- [Commands Reference](#commands-reference)
-- [How It Works](#how-it-works)
-- [Zone Coverage](#zone-coverage)
-- [Reputation System](#reputation-system)
-- [Technical Details](#technical-details)
+- [Commands](#commands)
+- [Configuration](#configuration)
 - [Development](#development)
 - [Deployment](#deployment)
-- [Roadmap](#roadmap)
-
----
-
-## Features
-
-### 🚨 Real-time Alerts
-- Instant notifications when wardens are spotted in your subscribed zones
-- Alerts include location description, GPS coordinates, and reporter reputation
-- Urgency indicators based on how recent the sighting is
-
-### 📍 Comprehensive Coverage
-- **80 zones** across Singapore
-- 6 regions: Central, Central North, East, West, North, North-East
-- Auto-detects nearest zone from GPS location share
-
-### 📊 Feedback & Trust System
-- Rate alerts as 👍 Accurate or 👎 False alarm
-- Reporter accuracy scores calculated from community feedback
-- Visual indicators help identify reliable vs unreliable reporters
-
-### 🏆 Gamification
-- Badge progression from 🆕 New to 🏆 Veteran
-- Track your stats with `/mystats`
-- Accuracy ratings build your reputation
-
-### 🛡️ Smart Duplicate Detection
-- GPS-aware: reports within 200m in the same zone are grouped as duplicates
-- Multiple wardens in the same zone are allowed when GPS shows they're far apart
-- Falls back to zone-level detection when GPS is unavailable
-
-### 📤 Easy Sharing
-- Built-in `/share` command generates invite message
-- Designed for viral growth through driver communities
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
 
 ---
 
@@ -62,22 +28,15 @@ Crowdsourced parking warden alerts for Singapore drivers. Get notified when ward
 ### Installation
 
 ```bash
-# 1. Clone or unzip the project
 cd parkwatch-bot
+pip install -r requirements.txt       # runtime only
+pip install -e ".[dev]"               # with dev tools (pytest, ruff, mypy)
 
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# Or install with dev tools (pytest, ruff, mypy):
-pip install -e ".[dev]"
-
-# 3. Create environment file
+# Configure
 cp .env.example .env
+# Edit .env — set TELEGRAM_BOT_TOKEN=your_token_here
 
-# 4. Add your bot token to .env
-# TELEGRAM_BOT_TOKEN=your_token_here
-
-# 5. Run the bot
+# Run
 python -m bot.main
 ```
 
@@ -96,7 +55,7 @@ You should see:
 
 ---
 
-## Commands Reference
+## Commands
 
 ### User Commands
 
@@ -114,185 +73,60 @@ You should see:
 
 ### Admin Commands
 
-Admin commands require the user's Telegram ID to be listed in `ADMIN_USER_IDS`. Non-admin users receive a generic "Unknown command" response.
+Require `ADMIN_USER_IDS` to be set. Non-admin users receive a generic "Unknown command" response.
 
 | Command | Description |
 |---------|-------------|
 | `/admin` | Show all admin commands |
-| `/admin stats` | Global statistics dashboard (users, sightings, zones, feedback) |
-| `/admin user <id or @username>` | Look up a user's details, subscriptions, activity, and ban status |
-| `/admin zone <zone_name>` | Look up a zone's subscribers, sightings, and top reporters |
-| `/admin log [count]` | View recent admin actions audit log (default: 20, max: 100) |
+| `/admin stats` | Global statistics dashboard |
+| `/admin user <id or @username>` | Look up user details and activity |
+| `/admin zone <zone_name>` | Look up zone activity and stats |
+| `/admin log [count]` | View admin actions audit log (default: 20, max: 100) |
 | `/admin ban <user_id> [reason]` | Ban a user (clears subscriptions, notifies user) |
 | `/admin unban <user_id>` | Remove a user's ban and reset warnings |
-| `/admin banlist` | List all currently banned users with date and reason |
-| `/admin warn <user_id> [message]` | Send a warning to a user (auto-ban after 3 warnings) |
+| `/admin banlist` | List all currently banned users |
+| `/admin warn <user_id> [message]` | Send a warning (auto-ban after 3 warnings) |
 | `/admin delete <sighting_id> [confirm]` | Delete a sighting (two-step confirmation) |
 | `/admin review` | View moderation queue of flagged sightings |
 | `/admin help [command]` | Detailed help for a specific admin command |
 
----
-
-## How It Works
-
-### For Users Receiving Alerts
-
-1. **Subscribe** to zones where you frequently park (`/start` or `/subscribe`)
-2. **Receive alerts** when someone reports a warden in your zone
-3. **Rate the alert** using 👍/👎 buttons to help build trust
-4. **Check recent sightings** with `/recent` before parking
-
-### For Users Reporting Sightings
-
-1. Spot a warden → Use `/report`
-2. **Share location** (GPS) or **select zone manually**
-3. **Add description** (e.g., "outside Maxwell Food Centre")
-4. **Confirm** — duplicate check runs (GPS-aware: within 200m = duplicate, further apart = allowed)
-5. **Alert broadcasts** to all zone subscribers
-6. **Earn reputation** as your reports get positive feedback
-
-### Alert Message Format
-
-```
-🚨 WARDEN ALERT — Tanjong Pagar
-🕐 Spotted: 2:30 PM
-📝 Location: Outside Maxwell Food Centre
-🌐 GPS: 1.276432, 103.846021
-👤 Reporter: ⭐ Regular ✅
-
-⏰ Extend your parking now!
-
-━━━━━━━━━━━━━━━━━━━━━
-📊 Feedback: 👍 5 / 👎 1
-Thanks for your feedback!
-
-[👍 Accurate (5)] [👎 False alarm (1)]
-```
-
-### Recent Sightings Display
-
-```
-📋 Recent sightings in your zones:
-
-🔴 Tanjong Pagar — 2 mins ago
-   📝 Outside Maxwell Food Centre
-   🌐 GPS: 1.276432, 103.846021
-   👤 ⭐ Regular ✅
-   📊 Feedback: 👍 5 / 👎 1
-
-🟡 Bugis — 12 mins ago
-   📝 Near Bugis Junction carpark
-   👤 🆕 New
-```
-
-Urgency indicators:
-- 🔴 0–5 mins ago (high urgency — warden likely still there)
-- 🟡 5–15 mins ago (medium urgency)
-- 🟢 15–30 mins ago (low urgency — may have moved on)
+For detailed user flows, message formats, reputation rules, and zone lists, see [`parking_warden_bot_spec.md`](parking_warden_bot_spec.md).
 
 ---
 
-## Zone Coverage
+## Configuration
 
-### Central (16 zones)
-Tanjong Pagar, Bugis, Orchard, Chinatown, Clarke Quay, Raffles Place, Marina Bay, City Hall, Dhoby Ghaut, Somerset, Tiong Bahru, Outram, Telok Ayer, Boat Quay, Robertson Quay, River Valley
+### Environment Variables
 
-### Central North (9 zones)
-Novena, Toa Payoh, Bishan, Ang Mo Kio, Marymount, Caldecott, Thomson, Braddell, Lorong Chuan
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | Yes | — |
+| `DATABASE_URL` | PostgreSQL connection string (SQLite if omitted) | No | SQLite |
+| `DATABASE_PRIVATE_URL` | Railway internal DB URL (takes priority) | No | — |
+| `WEBHOOK_URL` | Public URL for webhook mode (omit for polling) | No | — |
+| `PORT` | Webhook listener port | No | `8443` |
+| `HEALTH_CHECK_ENABLED` | Enable the health check HTTP server | No | `true` |
+| `HEALTH_CHECK_PORT` | Health check server port | No | `$PORT` or `8080` |
+| `LOG_FORMAT` | `text` (human-readable) or `json` (structured) | No | `text` |
+| `SENTRY_DSN` | Sentry error tracking DSN | No | — |
+| `ADMIN_USER_IDS` | Comma-separated admin Telegram user IDs | No | `""` |
+| `MAX_WARNINGS` | Warnings before auto-ban (0 to disable) | No | `3` |
+| `SIGHTING_RETENTION_DAYS` | Days to retain sighting data | No | `30` |
+| `FEEDBACK_WINDOW_HOURS` | Hours feedback buttons remain active | No | `24` |
 
-### East (20 zones)
-Tampines, Bedok, Paya Lebar, Katong, Pasir Ris, Changi, Simei, Eunos, Kembangan, Marine Parade, East Coast, Geylang, Aljunied, Kallang, Lavender, Joo Chiat, Siglap, Tai Seng, Ubi, MacPherson
+### Bot Settings (`config.py`)
 
-### West (17 zones)
-Jurong East, Jurong West, Clementi, Buona Vista, Boon Lay, Pioneer, Tuas, Queenstown, Commonwealth, HarbourFront, Telok Blangah, West Coast, Dover, Holland Village, Ghim Moh, Lakeside, Chinese Garden
-
-### North (8 zones)
-Woodlands, Yishun, Sembawang, Admiralty, Marsiling, Kranji, Canberra, Khatib
-
-### North-East (10 zones)
-Hougang, Sengkang, Punggol, Serangoon, Kovan, Potong Pasir, Bartley, Buangkok, Rivervale, Anchorvale
-
----
-
-## Reputation System
-
-### Reporter Badges
-
-Badges are earned by submitting reports:
-
-| Badge | Reports Required |
-|-------|------------------|
-| 🆕 New | 0–2 reports |
-| ⭐ Regular | 3–10 reports |
-| ⭐⭐ Trusted | 11–50 reports |
-| 🏆 Veteran | 51+ reports |
-
-### Accuracy Score
-
-Calculated from community feedback on your reports:
-
-```
-Accuracy = Positive Feedback / Total Feedback
-```
-
-| Indicator | Score | Meaning |
-|-----------|-------|---------|
-| ✅ | 80%+ | Highly reliable reporter |
-| ⚠️ | 50–79% | Mixed accuracy |
-| ❌ | <50% | Low reliability (possible spammer) |
-
-*Note: Accuracy indicator only shows after receiving 3+ ratings*
-
-### My Stats Example
-
-```
-📊 Your Reporter Stats
-
-🏆 Badge: ⭐ Regular
-📝 Total reports: 8
-
-Accuracy Rating:
-👍 Positive: 15
-👎 Negative: 3
-
-✨ Accuracy score: 83% ✅
-
-Badge Progression:
-📈 3 more reports for ⭐⭐ Trusted
-```
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `SIGHTING_EXPIRY_MINUTES` | 30 | How long sightings appear in `/recent` |
+| `MAX_REPORTS_PER_HOUR` | 3 | Rate limit per user |
+| `DUPLICATE_WINDOW_MINUTES` | 5 | Time window for duplicate detection |
+| `DUPLICATE_RADIUS_METERS` | 200 | GPS radius for duplicate detection (Haversine) |
+| `BOT_VERSION` | 1.3.0 | Version reported in health check & Sentry |
 
 ---
 
-## Technical Details
-
-### Architecture
-
-```
-┌─────────────────┐         ┌─────────────────┐
-│   Telegram      │◄───────►│   Bot Server    │
-│   Users         │   API   │   (Python)      │
-└─────────────────┘         └────────┬────────┘
-                                     │
-                            ┌────────▼────────┐
-                            │  SQLite (dev)   │
-                            │  PostgreSQL     │
-                            │  (production)   │
-                            └─────────────────┘
-```
-
-### Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Bot Framework | python-telegram-bot 21+ (async) |
-| Language | Python 3.10+ |
-| Config | python-dotenv |
-| Database (dev) | SQLite via aiosqlite |
-| Database (prod) | PostgreSQL via asyncpg (connection pooling) |
-| Migrations | Alembic (versioned schema changes) |
-| Logging | Structured JSON or human-readable text |
-| Error Tracking | Sentry (optional, via `sentry-sdk`) |
-| Hosting | Local / Railway / Render / VPS |
+## Development
 
 ### Project Structure
 
@@ -300,189 +134,55 @@ Badge Progression:
 parkwatch-bot/
 ├── bot/
 │   ├── __init__.py              # Package marker
-│   ├── main.py                  # Bot logic, handlers, admin commands, conversation flow
+│   ├── main.py                  # Bot logic, handlers, conversation flow
 │   ├── database.py              # Dual-driver DB abstraction (SQLite/PostgreSQL)
 │   ├── health.py                # Health check HTTP server (GET /health)
 │   └── logging_config.py        # Structured logging (text/JSON modes)
-├── tests/
-│   ├── conftest.py              # Shared fixtures (fresh SQLite DB per test)
-│   ├── test_unit.py             # Unit tests for pure functions (48 tests)
-│   ├── test_database.py         # Database integration tests (57 tests)
-│   ├── test_phase7.py           # Production infrastructure tests (22 tests)
-│   ├── test_phase8.py           # Admin foundation tests (43 tests)
-│   └── test_phase9.py           # User management & moderation tests (47 tests)
-├── alembic/
-│   ├── env.py                   # Alembic environment (reads DATABASE_URL)
-│   ├── script.py.mako           # Migration script template
-│   └── versions/
-│       ├── 001_initial_schema.py  # Baseline migration
-│       ├── 002_admin_actions_table.py  # Phase 8: admin audit log
-│       └── 003_phase9_user_management.py  # Phase 9: banning, flagging, warnings
-├── .github/
-│   └── workflows/
-│       └── ci.yml               # GitHub Actions CI (lint + typecheck + test)
-├── alembic.ini                  # Alembic configuration
-├── config.py                    # Environment configuration & bot settings
+├── tests/                       # 217 tests (unit, integration, infrastructure)
+├── alembic/                     # Database migration scripts (3 migrations)
+├── config.py                    # Environment configuration
 ├── pyproject.toml               # Project metadata, deps, tool configs
-├── requirements.txt             # Runtime dependencies (legacy compat)
-├── .env.example                 # Environment variable template
-├── Procfile                     # Heroku-style process declaration
-├── railway.toml                 # Railway.app deployment config
-├── runtime.txt                  # Python version specification
-├── parking_warden_bot_spec.md   # Full product specification
-├── IMPROVEMENTS.md              # Code review & improvement plan
-└── README.md                    # This file
+├── requirements.txt             # Runtime dependencies
+└── .env.example                 # Environment variable template
 ```
-
-### Environment Variables
-
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | Yes | — |
-| `DATABASE_URL` | PostgreSQL connection string (SQLite used if omitted) | No | SQLite |
-| `DATABASE_PRIVATE_URL` | Railway internal DB URL (takes priority over `DATABASE_URL`) | No | — |
-| `SIGHTING_RETENTION_DAYS` | Days to retain sighting data | No | `30` |
-| `FEEDBACK_WINDOW_HOURS` | Hours feedback buttons remain active | No | `24` |
-| `WEBHOOK_URL` | Public URL for webhook mode (omit for polling) | No | — |
-| `PORT` | Webhook listener port | No | `8443` |
-| `HEALTH_CHECK_ENABLED` | Enable the health check HTTP server | No | `true` |
-| `HEALTH_CHECK_PORT` | Health check server port | No | `$PORT` or `8080` |
-| `LOG_FORMAT` | Logging format: `text` (human) or `json` (structured) | No | `text` |
-| `SENTRY_DSN` | Sentry error tracking DSN | No | — |
-| `ADMIN_USER_IDS` | Comma-separated admin Telegram user IDs | No | `""` (empty) |
-| `MAX_WARNINGS` | Number of warnings before auto-ban (0 to disable) | No | `3` |
-
-### Bot Settings (`config.py`)
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `SIGHTING_EXPIRY_MINUTES` | 30 | How long sightings remain active |
-| `MAX_REPORTS_PER_HOUR` | 3 | Rate limit per user |
-| `DUPLICATE_WINDOW_MINUTES` | 5 | Time window for duplicate detection |
-| `DUPLICATE_RADIUS_METERS` | 200 | GPS radius for duplicate detection (Haversine) |
-| `SIGHTING_RETENTION_DAYS` | 30 | Days to retain sighting data |
-| `FEEDBACK_WINDOW_HOURS` | 24 | Hours feedback buttons remain active |
-| `MAX_WARNINGS` | 3 | Warnings before auto-ban (0 = disabled) |
-| `BOT_VERSION` | 1.3.0 | Version reported in health check & Sentry |
-
-### Database Schema
-
-Data is stored in 6 tables with 5 indexes. Tables are created automatically on startup.
-
-```sql
--- User accounts, report counts, and warning tracking
-users (telegram_id BIGINT PK, username TEXT, report_count INT, warnings INT, created_at TIMESTAMP)
-
--- Zone subscriptions (many-to-many)
-subscriptions (telegram_id BIGINT, zone_name TEXT, created_at TIMESTAMP, PK(telegram_id, zone_name))
-
--- Warden sighting reports (with moderation flag)
-sightings (id TEXT PK, zone TEXT, description TEXT, reported_at TIMESTAMP,
-           reporter_id BIGINT, reporter_name TEXT, reporter_badge TEXT,
-           lat REAL, lng REAL, feedback_positive INT, feedback_negative INT,
-           flagged INT DEFAULT 0)
-
--- Feedback votes on sightings (FK cascades on sighting deletion)
-feedback (sighting_id TEXT REFERENCES sightings(id) ON DELETE CASCADE,
-         user_id BIGINT, vote TEXT, created_at TIMESTAMP, PK(sighting_id, user_id))
-
--- Admin audit log (Phase 8)
-admin_actions (id INTEGER PK AUTOINCREMENT, admin_id BIGINT, action TEXT,
-              target TEXT, detail TEXT, created_at TIMESTAMP)
-
--- Banned users (Phase 9)
-banned_users (telegram_id BIGINT PK, banned_by BIGINT, reason TEXT, banned_at TIMESTAMP)
-
--- Indexes
-idx_sightings_zone_time ON sightings(zone, reported_at)
-idx_sightings_reporter ON sightings(reporter_id)
-idx_subscriptions_zone ON subscriptions(zone_name)
-idx_feedback_sighting ON feedback(sighting_id)
-idx_admin_actions_time ON admin_actions(created_at)
-```
-
-**Local development** uses SQLite (`parkwatch.db` auto-created). **Production** uses PostgreSQL — just set `DATABASE_URL` and the database driver switches automatically.
-
----
-
-## Development
 
 ### Running Tests
 
 ```bash
-# Install dev dependencies
 pip install -e ".[dev]"
 
-# Run all tests
-pytest
-
-# Run with verbose output
-pytest -v
-
-# Run only unit tests
-pytest tests/test_unit.py
-
-# Run only database tests
-pytest tests/test_database.py
+pytest                        # all 217 tests
+pytest -v                     # verbose output
+pytest tests/test_unit.py     # unit tests only (48 tests)
+pytest tests/test_database.py # integration tests only (57 tests)
 ```
-
-**Test suite summary** (217 tests):
-- **48 unit tests** — pure functions (`haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `sanitize_description`, `build_alert_message`, `generate_sighting_id`) plus zone data integrity
-- **57 integration tests** — database CRUD, subscriptions, sightings, feedback, accuracy, rate limiting, cleanup, and driver detection
-- **22 infrastructure tests** — health check server (5), structured logging (9), config validation (6), Sentry init (2)
-- **43 admin tests** — config parsing (6), admin_only decorator (2), audit log (7), global stats (6), user lookup (9), zone lookup (6), schema (3), help (2), zone validation (2)
-- **47 moderation tests** — ban operations (10), sighting moderation (8), low-accuracy reporters (4), warnings (5), schema (4), config (3), ban_check (2), auto-flag (4), help text (2), ban integration (3), escalation (2)
 
 ### Linting & Type Checking
 
 ```bash
-# Lint with ruff
-ruff check .
-
-# Check formatting
-ruff format --check .
-
-# Auto-fix lint issues
-ruff check --fix .
-
-# Apply formatting
-ruff format .
-
-# Type check
-mypy bot/ config.py
+ruff check .                  # lint
+ruff format --check .         # format check
+mypy bot/ config.py           # type check
 ```
 
 ### CI Pipeline
 
-GitHub Actions runs automatically on every push/PR to `master`:
-1. **Lint** — `ruff check` + `ruff format --check`
-2. **Type Check** — `mypy bot/ config.py`
-3. **Test** — `pytest -v` across Python 3.10, 3.11, 3.12
-
-See `.github/workflows/ci.yml` for the full pipeline configuration.
+GitHub Actions runs on every push/PR to `master`: lint → type check → test (Python 3.10, 3.11, 3.12). See `.github/workflows/ci.yml`.
 
 ---
 
 ## Deployment
 
-### Polling vs Webhook Mode
-
-The bot supports two modes of receiving Telegram updates:
+### Polling vs Webhook
 
 | | Polling (default) | Webhook |
 |---|---|---|
-| **How it works** | Bot repeatedly asks Telegram for updates | Telegram pushes updates to your server |
-| **Config** | No extra config needed | Set `WEBHOOK_URL` env var |
-| **Best for** | Local development, VPS | Railway, Render, Kubernetes |
+| **How it works** | Bot polls Telegram for updates | Telegram pushes updates to your server |
+| **Config** | No extra config needed | Set `WEBHOOK_URL` |
+| **Best for** | Local dev, VPS | Railway, Render, Kubernetes |
 | **Requires** | Outbound internet access | Public HTTPS URL |
 
-To enable webhook mode, set:
-```bash
-WEBHOOK_URL=https://your-app.up.railway.app
-PORT=8443  # or let Railway inject PORT
-```
-
-### Health Check Endpoint
+### Health Check
 
 A lightweight HTTP server runs alongside the bot (enabled by default) and responds to `GET /health`:
 
@@ -490,102 +190,54 @@ A lightweight HTTP server runs alongside the bot (enabled by default) and respon
 {"status": "ok", "version": "1.3.0", "mode": "polling", "timestamp": "2026-02-13T12:00:00+00:00"}
 ```
 
-Configure with `HEALTH_CHECK_ENABLED`, `HEALTH_CHECK_PORT` env vars. Railway's `healthcheckPath` is pre-configured to `/health`.
-
 ### Structured Logging
 
-Set `LOG_FORMAT=json` for structured JSON logging suitable for log aggregation services (Datadog, ELK, CloudWatch):
-
-```json
-{"timestamp":"2026-02-13T14:30:00.123+00:00","level":"INFO","logger":"bot.main","message":"Bot starting..."}
-```
-
-Default is `text` (human-readable).
+Set `LOG_FORMAT=json` for JSON output suitable for log aggregation (Datadog, ELK, CloudWatch). Default is `text`.
 
 ### Error Tracking (Sentry)
 
-Install Sentry support and set the DSN:
 ```bash
 pip install ".[sentry]"
-# Then set in .env:
-SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+# Set SENTRY_DSN in .env
 ```
 
-Sentry is optional — the bot works without it. If `SENTRY_DSN` is set but `sentry-sdk` is not installed, a warning is logged.
+Optional — bot works without it.
 
 ### Database Migrations (Alembic)
 
-Schema changes are versioned with Alembic. The initial migration (`001_initial_schema.py`) matches the existing `create_tables()` schema.
-
 ```bash
-# Run migrations to latest
-alembic upgrade head
-
-# Check current version
-alembic current
-
-# Generate a new migration (after modifying the schema)
-alembic revision -m "add_new_column"
+alembic upgrade head          # run migrations
+alembic current               # check version
+alembic revision -m "desc"    # create new migration
 ```
 
-The `create_tables()` method is retained as a fallback for fresh installs that don't use Alembic.
+`create_tables()` is retained as fallback for fresh installs without Alembic.
 
-### Local Development
+### Railway (Recommended)
 
-```bash
-python -m bot.main
-```
+1. Push to GitHub → Create Railway project → Deploy from repo
+2. Add PostgreSQL service
+3. Set env vars: `TELEGRAM_BOT_TOKEN`, `WEBHOOK_URL` (your Railway app URL)
+4. Deploy — Railway injects `DATABASE_URL` and `PORT`; health check pre-configured
 
-Bot runs in polling mode in foreground. Press Ctrl+C to stop. Health check available at `http://localhost:8080/health`.
+### Render
 
-### Production Deployment
+1. Push to GitHub → Create **Background Worker** (polling) or **Web Service** (webhook)
+2. Build: `pip install -r requirements.txt` · Start: `python -m bot.main`
+3. Set env vars: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, optionally `WEBHOOK_URL`
 
-#### Option 1: Railway (Recommended for beginners)
-
-1. Push code to GitHub
-2. Sign up at [Railway](https://railway.app)
-3. Create new project → Deploy from GitHub repo
-4. Add a PostgreSQL database service to the project
-5. Add environment variables: `TELEGRAM_BOT_TOKEN`, `WEBHOOK_URL` (your Railway app URL)
-6. Deploy — Railway auto-injects `DATABASE_URL` and `PORT`, health check is pre-configured
-
-#### Option 2: Render
-
-1. Push code to GitHub
-2. Sign up at [Render](https://render.com)
-3. Create a PostgreSQL database (or skip for SQLite)
-4. Create new **Background Worker** (not Web Service) for polling mode, or **Web Service** for webhook mode
-5. Connect your GitHub repo
-6. Set build command: `pip install -r requirements.txt`
-7. Set start command: `python -m bot.main`
-8. Add environment variables: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL` (from step 3), optionally `WEBHOOK_URL`
-
-#### Option 3: DigitalOcean / VPS
+### VPS (DigitalOcean, etc.)
 
 ```bash
-# SSH into your server
-ssh user@your-server
-
-# Clone repository
-git clone https://github.com/yourusername/parkwatch-bot.git
-cd parkwatch-bot
-
-# Install dependencies
+git clone <repo> && cd parkwatch-bot
 pip install -r requirements.txt
-
-# Create .env file
-echo "TELEGRAM_BOT_TOKEN=your_token_here" > .env
-
-# Option A: Run with screen (keeps running after disconnect)
-screen -S parkwatch
-python -m bot.main
-# Press Ctrl+A, then D to detach
-
-# Option B: Run with systemd (auto-restart on crash)
-# Create /etc/systemd/system/parkwatch.service
+echo "TELEGRAM_BOT_TOKEN=your_token" > .env
+python -m bot.main              # foreground
+# Or use screen/tmux/systemd for background persistence
 ```
 
-#### Systemd Service File
+<details>
+<summary>systemd service file</summary>
 
 ```ini
 [Unit]
@@ -606,176 +258,39 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable parkwatch
-sudo systemctl start parkwatch
-sudo systemctl status parkwatch
+sudo systemctl enable parkwatch && sudo systemctl start parkwatch
 ```
 
----
-
-## Roadmap
-
-### MVP ✅
-- [x] Zone subscription system (80 zones, 6 regions)
-- [x] Report flow (GPS + manual region→zone selection)
-- [x] Location descriptions with input sanitization
-- [x] Alert broadcasting to subscribers
-- [x] Feedback system (👍/👎 with vote changing)
-- [x] Reporter reputation (4-tier badges + accuracy score)
-- [x] Urgency indicators on recent sightings
-- [x] Share/invite functionality
-- [x] User stats tracking
-
-### Stability & UX ✅
-- [x] Rate limiting (3 reports/hour per user)
-- [x] GPS-aware duplicate detection (Haversine, 200m radius)
-- [x] Self-rating prevention (server-side)
-- [x] Multi-zone toggle subscription (keyboard stays open)
-- [x] ConversationHandler state machine for report flow
-- [x] Native GPS share button (`request_location=True`)
-
-### Persistence ✅
-- [x] Dual-driver database (SQLite dev / PostgreSQL prod)
-- [x] Data persists across bot restarts
-- [x] Accuracy scores from full history (SQL aggregates)
-- [x] Scheduled cleanup job (every 6 hours)
-- [x] Feedback window expiry (24h configurable)
-
-### Robustness ✅
-- [x] Alert messages rebuilt from structured DB data
-- [x] Blocked user detection and subscription cleanup
-- [x] Global error handler with user notification
-- [x] Broadcast failure reporting to reporter
-
-### Bug Fixes (Phase 5) ✅
-- [x] Timezone-aware datetime throughout (`datetime.now(timezone.utc)`)
-- [x] Collision-proof sighting IDs (UUID4)
-- [x] Transaction-safe feedback updates (`Database.apply_feedback()`)
-- [x] Rate limit timing fix (`.total_seconds()`)
-- [x] Foreign key constraints with cascading deletes
-- [x] Proper Python packaging (relative imports, `python -m bot.main`)
-- [x] Accuracy display fix ("No ratings yet" for zero feedback)
-- [x] Module-level ZONE_COORDS
-- [x] Share message threshold (no "0+" on fresh installs)
-
-### Testing & CI (Phase 6) ✅
-- [x] `pyproject.toml` with project metadata and tool configs
-- [x] pytest + pytest-asyncio test suite (105 tests)
-- [x] Unit tests for pure functions (48 tests across 8 test classes)
-- [x] Database integration tests (57 tests across 10 test classes)
-- [x] GitHub Actions CI pipeline (ruff lint + mypy type check + pytest across 3.10/3.11/3.12)
-- [x] Lint compliance: import sorting, unused variable cleanup, `contextlib.suppress` patterns
-
-### Production Infrastructure (Phase 7) ✅
-- [x] Webhook mode — set `WEBHOOK_URL` to auto-switch from polling to webhook
-- [x] Health check endpoint — `GET /health` returns JSON status (version, mode, timestamp)
-- [x] Structured logging — `LOG_FORMAT=json` for JSON output; text default for development
-- [x] Database migrations — Alembic with initial baseline migration matching existing schema
-- [x] Error tracking — Sentry integration (optional `sentry-sdk` dependency)
-- [x] 22 new tests for all Phase 7 features (127 total)
-
-### Admin — Foundation & Visibility (Phase 8) ✅
-- [x] Admin authentication (`ADMIN_USER_IDS` env var, `admin_only` decorator)
-- [x] `/admin` help command (with `/admin help <command>` for detailed usage)
-- [x] `/admin stats` — global statistics dashboard (users, sightings, zones, feedback)
-- [x] `/admin user <id or @username>` — user lookup (details, subscriptions, sightings, feedback)
-- [x] `/admin zone <name>` — zone lookup (subscribers, sightings, top reporters)
-- [x] Audit logging (`admin_actions` table, `/admin log [count]`, Alembic migration 002)
-- [x] 43 new tests for all Phase 8 features (170 total)
-
-### Admin — User Management & Moderation (Phase 9) ✅
-- [x] `/admin ban <user_id> [reason]` — ban users (clears subscriptions, notifies user)
-- [x] `/admin unban <user_id>` — remove bans (resets warnings, notifies user)
-- [x] `/admin banlist` — list all banned users with date and reason
-- [x] Ban enforcement middleware (`ban_check` decorator on all user commands except `/start`)
-- [x] `/admin delete <sighting_id> [confirm]` — two-step sighting deletion
-- [x] `/admin review` — moderation queue (flagged sightings + low-accuracy reporters)
-- [x] Auto-flag logic — sightings auto-flagged when >70% negative feedback (3+ votes)
-- [x] `/admin warn <user_id> [message]` — warning system with configurable auto-ban escalation
-- [x] `MAX_WARNINGS` env var (default 3, set 0 to disable)
-- [x] User lookup shows ban status and warning count
-- [x] Alembic migration 003 for Phase 9 schema (banned_users table, flagged/warnings columns)
-- [x] 47 new tests for all Phase 9 features (217 total)
-
-### Future: Admin — Broadcast & Operations (Phase 10)
-- [ ] `/admin broadcast` — message all users (with confirmation + delivery report)
-- [ ] Targeted broadcast by zone or region
-- [ ] `/admin maintenance on|off` — maintenance mode
-- [ ] `/admin purge` — manual data cleanup + GDPR user deletion
-- [ ] `/admin export stats` — CSV/JSON data export
-- [ ] `/admin config` — view/adjust runtime settings without restart
-
-### Future: Growth Features (Phase 11)
-- [ ] Weekly/monthly leaderboard
-- [ ] Inline mode for cross-chat queries
-- [ ] Warden activity heatmaps by time/day
-- [ ] Deep linking for referral tracking
-- [ ] Multi-language support (i18n)
-
-### Future: Monetisation (Phase 12)
-- [ ] Freemium (1 zone free, premium for all zones)
-- [ ] Sponsored alerts from parking providers
-- [ ] Business API for fleet managers
+</details>
 
 ---
 
 ## Troubleshooting
 
-### Bot doesn't respond
-
-1. Check that `TELEGRAM_BOT_TOKEN` is set correctly in `.env`
-2. Ensure the `.env` file is in the `parkwatch-bot/` directory
-3. Verify bot is running: you should see "ParkWatch SG Bot starting..."
-
-### Module not found error
-
-```bash
-# Make sure you're in the right directory
-cd parkwatch-bot
-python -m bot.main
-```
-
-### asyncpg build error on Windows
-
-asyncpg requires a C compiler to build on Windows. Options:
-1. Install [Microsoft Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
-2. Use WSL (Windows Subsystem for Linux)
-3. For local dev only, asyncpg is not needed — SQLite is used automatically when `DATABASE_URL` is not set
-
-### Rate limiting
-
-If you're testing rapidly, Telegram may rate-limit. Wait a few minutes and try again.
+| Problem | Solution |
+|---------|----------|
+| Bot doesn't respond | Check `TELEGRAM_BOT_TOKEN` in `.env`; verify `.env` is in project root |
+| `ModuleNotFoundError` | Run from project root: `python -m bot.main` |
+| asyncpg build error (Windows) | Use WSL, or omit `DATABASE_URL` to use SQLite locally |
+| Rate limiting during testing | Wait a few minutes — Telegram API rate limits |
 
 ---
 
 ## Contributing
 
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Install dev dependencies: `pip install -e ".[dev]"`
-4. Make your changes
-5. Run the checks: `ruff check . && mypy bot/ config.py && pytest`
-6. Commit your changes (`git commit -m 'Add amazing feature'`)
-7. Push to the branch (`git push origin feature/amazing-feature`)
-8. Open a Pull Request — CI will run automatically
+1. Fork → branch (`feature/...`) → `pip install -e ".[dev]"`
+2. Make changes → `ruff check . && mypy bot/ config.py && pytest`
+3. Commit → push → open PR (CI runs automatically)
 
 ---
 
-## License
+## Further Reading
+
+- [`parking_warden_bot_spec.md`](parking_warden_bot_spec.md) — Product specification: user flows, message formats, reputation system, zone coverage, growth strategy
+- [`IMPROVEMENTS.md`](IMPROVEMENTS.md) — Code review findings and improvement roadmap (Phases 1–13)
+
+---
 
 MIT License — free to use, modify, and distribute.
 
----
-
-## Acknowledgements
-
-- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) — Excellent Telegram Bot API wrapper
-- Singapore drivers community — For the inspiration
-
----
-
-Built with ❤️ for Singapore drivers tired of parking tickets.
-
-**Stop getting summons. Start using ParkWatch SG.**
+Built with ❤️ for Singapore drivers. **Stop getting summons. Start using ParkWatch SG.**

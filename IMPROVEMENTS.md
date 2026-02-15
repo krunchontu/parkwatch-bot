@@ -257,7 +257,7 @@ Structural improvements to reduce maintenance debt, close the admin-user communi
 #### 10.1 Documentation Cleanup
 
 - [x] **10.1.1** Fix README version drift — update stale `1.2.0` references in example output to match `BOT_VERSION = "1.3.0"` (lines 86, 490)
-- [ ] **10.1.2** Consolidate README and spec — trim `README.md` to operator essentials (setup, deployment, env vars, command reference); move deep product flow details into `parking_warden_bot_spec.md` as the single maintained spec; eliminate duplicated content between the two files
+- [x] **10.1.2** Consolidate README and spec — trim `README.md` to operator essentials (setup, deployment, env vars, command reference); move deep product flow details into `parking_warden_bot_spec.md` as the single maintained spec; eliminate duplicated content between the two files
 - [ ] **10.1.3** Update file reference table and line counts in IMPROVEMENTS.md after refactor
 
 #### 10.2 Refactor `bot/main.py` into Modules
@@ -484,8 +484,8 @@ Quick reference for all admin commands once fully implemented.
 | `tests/test_phase8.py` | ~530 | Phase 8 tests: admin auth, stats, lookup, audit log (43 tests) |
 | `tests/test_phase9.py` | ~550 | Phase 9 tests: banning, moderation, warnings, auto-flag, escalation (47 tests) |
 | `.github/workflows/ci.yml` | ~45 | GitHub Actions CI pipeline (lint + typecheck + test) |
-| `parking_warden_bot_spec.md` | ~700 | Full product specification with user flows |
-| `README.md` | ~850 | User-facing documentation |
+| `parking_warden_bot_spec.md` | ~700 | Full product specification (user flows, message formats, reputation, zones) |
+| `README.md` | ~300 | Operator documentation (setup, config, deployment, commands) |
 | `IMPROVEMENTS.md` | — | This file (code review & improvement plan) |
 | `Procfile` | 1 | Heroku-style process declaration |
 | `railway.toml` | ~10 | Railway.app deployment config (with health check) |
