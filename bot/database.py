@@ -838,6 +838,11 @@ class Database:
 
     # --- Phase 10: User Feedback Rate Limiting ---
 
+    async def get_all_user_ids(self) -> list[int]:
+        """Get all registered user IDs (for broadcast)."""
+        rows = await self._fetchall("SELECT telegram_id FROM users")
+        return [r["telegram_id"] for r in rows]
+
     async def count_user_feedback_since(self, user_id: int, since: datetime) -> int:
         """Count feedback messages sent by a user since a given time (for rate limiting)."""
         row = await self._fetchone(

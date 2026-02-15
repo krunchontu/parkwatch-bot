@@ -263,3 +263,277 @@ class TestHelpIncludesFeedback:
 
         help_text = update.message.reply_text.call_args[0][0]
         assert "/feedback" in help_text
+
+
+# ---------------------------------------------------------------------------
+# 10.3.3 Database: get_all_user_ids
+# ---------------------------------------------------------------------------
+class TestGetAllUserIds:
+    """Tests for the get_all_user_ids database method."""
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_users(self, db):
+        """Should return empty list when no users exist."""
+        ids = await db.get_all_user_ids()
+        assert ids == []
+
+    @pytest.mark.asyncio
+    async def test_returns_all_user_ids(self, db):
+        """Should return all registered user IDs."""
+        await db.ensure_user(100, "alice")
+        await db.ensure_user(200, "bob")
+        await db.ensure_user(300, "charlie")
+        ids = await db.get_all_user_ids()
+        assert set(ids) == {100, 200, 300}
+
+
+# ---------------------------------------------------------------------------
+# 10.4 /admin announce command
+# ---------------------------------------------------------------------------
+class TestAdminAnnounce:
+    """Tests for the /admin announce command."""
+
+    def _make_update(self, user_id=999, text="/admin announce"):
+        """Create a mock Update for admin testing."""
+        update = MagicMock()
+        update.effective_user.id = user_id
+        update.message.text = text
+        update.message.reply_text = AsyncMock()
+        return update
+
+    def _mock_db(self, user_ids=None, zone_subscribers=None):
+        """Create a mock DB for announce testing."""
+        mock = MagicMock()
+        mock.is_banned = AsyncMock(return_value=False)
+        mock.get_all_user_ids = AsyncMock(return_value=user_ids or [])
+        mock.get_zone_subscribers = AsyncMock(return_value=zone_subscribers or [])
+        mock.log_admin_action = AsyncMock()
+        mock.clear_subscriptions = AsyncMock()
+        return mock
+
+    def _run(self, update, context, mock_db, admin_ids=None):
+        """Run admin_command with mock DB and admin auth."""
+        from bot.handlers.admin import admin_command
+
+        if admin_ids is None:
+            admin_ids = {999}
+        with (
+            patch("bot.handlers.admin.ADMIN_USER_IDS", admin_ids),
+            patch("bot.handlers.admin.get_db", return_value=mock_db),
+        ):
+            asyncio.get_event_loop().run_until_complete(admin_command(update, context))
+
+    def test_announce_no_args_shows_usage(self):
+        """Should show usage when no arguments provided."""
+        update = self._make_update(text="/admin announce")
+        context = MagicMock()
+        context.user_data = {}
+        mock_db = self._mock_db()
+
+        self._run(update, context, mock_db)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Usage" in reply_text
+
+    def test_announce_all_shows_preview(self):
+        """Should show preview with recipient count for 'all' scope."""
+        update = self._make_update(text="/admin announce all Hello everyone!")
+        context = MagicMock()
+        context.user_data = {}
+        mock_db = self._mock_db(user_ids=[100, 200, 300])
+
+        self._run(update, context, mock_db)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Preview" in reply_text
+        assert "3" in reply_text  # 3 recipients
+        assert "Hello everyone!" in reply_text
+        assert "confirm" in reply_text.lower()
+
+    def test_announce_all_stores_pending(self):
+        """Should store pending announcement in context.user_data."""
+        update = self._make_update(text="/admin announce all Test message")
+        context = MagicMock()
+        context.user_data = {}
+        mock_db = self._mock_db(user_ids=[100, 200])
+
+        self._run(update, context, mock_db)
+
+        pending = context.user_data.get("pending_announce")
+        assert pending is not None
+        assert pending["scope"] == "all users"
+        assert pending["recipients"] == [100, 200]
+        assert "Test message" in pending["message"]
+
+    def test_announce_zone_shows_preview(self):
+        """Should show preview for zone-scoped announcement."""
+        update = self._make_update(text="/admin announce zone Bugis Watch out for roadworks")
+        context = MagicMock()
+        context.user_data = {}
+        mock_db = self._mock_db(zone_subscribers=[100, 200])
+
+        self._run(update, context, mock_db)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Preview" in reply_text
+        assert "Bugis" in reply_text
+        assert "Watch out for roadworks" in reply_text
+
+    def test_announce_zone_invalid_zone(self):
+        """Should reject announcements to non-existent zones."""
+        update = self._make_update(text="/admin announce zone NonExistentZone Hello")
+        context = MagicMock()
+        context.user_data = {}
+        mock_db = self._mock_db()
+
+        self._run(update, context, mock_db)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Could not parse" in reply_text or "not found" in reply_text.lower()
+
+    def test_announce_confirm_sends_messages(self):
+        """Should send messages to all recipients on confirm."""
+        update = self._make_update(text="/admin announce confirm")
+        context = MagicMock()
+        context.user_data = {
+            "pending_announce": {
+                "message": "Test broadcast",
+                "recipients": [100, 200, 300],
+                "scope": "all users",
+                "raw_text": "Test broadcast",
+            }
+        }
+        context.bot.send_message = AsyncMock()
+        mock_db = self._mock_db()
+
+        self._run(update, context, mock_db)
+
+        assert context.bot.send_message.call_count == 3
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Sent: 3" in reply_text
+
+    def test_announce_confirm_no_pending(self):
+        """Should show error when no pending announcement."""
+        update = self._make_update(text="/admin announce confirm")
+        context = MagicMock()
+        context.user_data = {}
+        mock_db = self._mock_db()
+
+        self._run(update, context, mock_db)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "No pending" in reply_text
+
+    def test_announce_confirm_handles_blocked_users(self):
+        """Should handle Forbidden errors and clean up blocked users."""
+        from telegram.error import Forbidden as TgForbidden
+
+        update = self._make_update(text="/admin announce confirm")
+        context = MagicMock()
+        context.user_data = {
+            "pending_announce": {
+                "message": "Test",
+                "recipients": [100, 200],
+                "scope": "all users",
+                "raw_text": "Test",
+            }
+        }
+
+        # First send succeeds, second raises Forbidden
+        context.bot.send_message = AsyncMock(
+            side_effect=[None, TgForbidden("Forbidden: bot was blocked by the user")]
+        )
+        mock_db = self._mock_db()
+
+        self._run(update, context, mock_db)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Sent: 1" in reply_text
+        assert "Failed: 1" in reply_text
+        assert "Blocked" in reply_text
+        mock_db.clear_subscriptions.assert_called_once_with(200)
+
+    def test_announce_confirm_logs_action(self):
+        """Should log the announcement to audit trail."""
+        update = self._make_update(text="/admin announce confirm")
+        context = MagicMock()
+        context.user_data = {
+            "pending_announce": {
+                "message": "Hello world",
+                "recipients": [100],
+                "scope": "all users",
+                "raw_text": "Hello world",
+            }
+        }
+        context.bot.send_message = AsyncMock()
+        mock_db = self._mock_db()
+
+        self._run(update, context, mock_db)
+
+        mock_db.log_admin_action.assert_called_once()
+        call_args = mock_db.log_admin_action.call_args
+        assert call_args[0][1] == "announce"
+        assert "all users" in call_args[1]["target"]
+
+    def test_announce_confirm_clears_pending(self):
+        """Should clear pending announcement after sending."""
+        update = self._make_update(text="/admin announce confirm")
+        context = MagicMock()
+        context.user_data = {
+            "pending_announce": {
+                "message": "Test",
+                "recipients": [100],
+                "scope": "all users",
+                "raw_text": "Test",
+            }
+        }
+        context.bot.send_message = AsyncMock()
+        mock_db = self._mock_db()
+
+        self._run(update, context, mock_db)
+
+        assert "pending_announce" not in context.user_data
+
+    def test_announce_all_no_message(self):
+        """Should show usage when 'all' has no message."""
+        update = self._make_update(text="/admin announce all")
+        context = MagicMock()
+        context.user_data = {}
+        mock_db = self._mock_db()
+
+        self._run(update, context, mock_db)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Usage" in reply_text
+
+    def test_announce_zone_no_message(self):
+        """Should show usage when 'zone' has no message."""
+        update = self._make_update(text="/admin announce zone")
+        context = MagicMock()
+        context.user_data = {}
+        mock_db = self._mock_db()
+
+        self._run(update, context, mock_db)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Usage" in reply_text
+
+
+# ---------------------------------------------------------------------------
+# 10.4.4 Admin help includes announce
+# ---------------------------------------------------------------------------
+class TestAdminHelpIncludesAnnounce:
+    """Tests that admin help includes announce commands."""
+
+    def test_admin_help_has_announce(self):
+        """ADMIN_COMMANDS_HELP should include announce."""
+        from bot.handlers.admin import ADMIN_COMMANDS_HELP
+
+        help_text = " ".join(ADMIN_COMMANDS_HELP.keys())
+        assert "announce" in help_text
+
+    def test_admin_detailed_has_announce(self):
+        """ADMIN_COMMANDS_DETAILED should include announce."""
+        from bot.handlers.admin import ADMIN_COMMANDS_DETAILED
+
+        assert "announce" in ADMIN_COMMANDS_DETAILED
