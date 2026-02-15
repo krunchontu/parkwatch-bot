@@ -1,13 +1,20 @@
 """User command handlers for ParkWatch SG."""
 
+import logging
+from datetime import datetime, timedelta, timezone
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
+
+from config import ADMIN_USER_IDS
 
 from ..database import get_db
 from ..services.moderation import ban_check
 from ..ui.keyboards import build_zone_keyboard
 from ..utils import get_accuracy_indicator, get_reporter_badge
 from ..zones import ZONES
+
+logger = logging.getLogger(__name__)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -213,7 +220,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/recent \u2014 See recent sightings (last 30 mins)\n\n"
         "*Your Profile:*\n"
         "/mystats \u2014 View your reporter stats & accuracy\n"
-        "/share \u2014 Invite friends to join\n\n"
+        "/share \u2014 Invite friends to join\n"
+        "/feedback \u2014 Send feedback to the admins\n\n"
         "/help \u2014 Show this message\n\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         "\U0001f4a1 *Tips:*\n"
@@ -339,4 +347,70 @@ _Shared by {user_name}_"""
         "\u2022 Colleagues who drive to work\n\n"
         "Every new user makes the network stronger! \U0001f4aa",
         parse_mode="Markdown",
+    )
+
+
+@ban_check
+async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /feedback <message> — relay user text to all admin users."""
+    text = update.message.text
+    parts = text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(
+            "\U0001f4ac *Send Feedback*\n\n"
+            "Usage: `/feedback <your message>`\n\n"
+            "Send suggestions, bug reports, or general feedback to the bot admins.",
+            parse_mode="Markdown",
+        )
+        return
+
+    message = parts[1].strip()
+    user_id = update.effective_user.id
+    username = update.effective_user.username or update.effective_user.first_name or "Anonymous"
+    db = get_db()
+
+    # Rate limit: 1 feedback message per user per hour
+    now = datetime.now(timezone.utc)
+    one_hour_ago = now - timedelta(hours=1)
+    recent_count = await db.count_user_feedback_since(user_id, one_hour_ago)
+
+    if recent_count >= 1:
+        await update.message.reply_text(
+            "\u23f3 You can only send one feedback message per hour.\n"
+            "Please try again later."
+        )
+        return
+
+    # Get user stats for admin context
+    stats = await db.get_user_stats(user_id)
+    report_count = stats["report_count"] if stats else 0
+    badge = get_reporter_badge(report_count)
+
+    # Build admin notification
+    admin_msg = (
+        "\U0001f4ec User Feedback\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"\U0001f464 From: {username} (ID: {user_id})\n"
+        f"\U0001f3c6 Badge: {badge} ({report_count} reports)\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"\U0001f4ac {message}\n"
+    )
+
+    # Relay to all admins
+    sent = 0
+    for admin_id in ADMIN_USER_IDS:
+        try:
+            await context.bot.send_message(chat_id=admin_id, text=admin_msg)
+            sent += 1
+        except Exception as e:
+            logger.error(f"Failed to relay feedback to admin {admin_id}: {e}")
+
+    # Log to audit trail
+    preview = message[:100] + ("..." if len(message) > 100 else "")
+    await db.log_admin_action(user_id, "user_feedback", target=str(user_id), detail=preview)
+
+    # Confirm to user
+    await update.message.reply_text(
+        "\u2705 Thanks! Your feedback has been sent to the bot admins.\n"
+        "We appreciate your input!"
     )

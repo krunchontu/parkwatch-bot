@@ -835,3 +835,14 @@ class Database:
     async def reset_warnings(self, user_id: int) -> None:
         """Reset warning count to zero for a user."""
         await self._execute(f"UPDATE users SET warnings = 0 WHERE telegram_id = {self._ph(1)}", (user_id,))
+
+    # --- Phase 10: User Feedback Rate Limiting ---
+
+    async def count_user_feedback_since(self, user_id: int, since: datetime) -> int:
+        """Count feedback messages sent by a user since a given time (for rate limiting)."""
+        row = await self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM admin_actions "
+            f"WHERE action = 'user_feedback' AND target = {self._ph(1)} AND created_at > {self._ph(2)}",
+            (str(user_id), since),
+        )
+        return row["cnt"] if row else 0

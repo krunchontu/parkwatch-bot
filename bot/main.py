@@ -52,6 +52,7 @@ from .handlers.report import (
     report,
 )
 from .handlers.user import (
+    feedback_command,
     handle_back_to_regions,
     handle_region_selection,
     handle_unsubscribe_callback,
@@ -220,6 +221,7 @@ def main():
     app.add_handler(CommandHandler("recent", recent))
     app.add_handler(CommandHandler("mystats", mystats))
     app.add_handler(CommandHandler("share", share))
+    app.add_handler(CommandHandler("feedback", feedback_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("admin", admin_command))
 
