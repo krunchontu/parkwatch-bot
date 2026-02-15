@@ -69,6 +69,7 @@ You should see:
 | `/recent` | View recent sightings in your zones (last 30 mins) |
 | `/mystats` | View your reporter stats, badge, and accuracy |
 | `/share` | Generate invite message to share with friends |
+| `/feedback <message>` | Send feedback or suggestions to bot admins |
 | `/help` | Show all commands and tips |
 
 ### Admin Commands
@@ -88,6 +89,8 @@ Require `ADMIN_USER_IDS` to be set. Non-admin users receive a generic "Unknown c
 | `/admin warn <user_id> [message]` | Send a warning (auto-ban after 3 warnings) |
 | `/admin delete <sighting_id> [confirm]` | Delete a sighting (two-step confirmation) |
 | `/admin review` | View moderation queue of flagged sightings |
+| `/admin announce all <msg>` | Broadcast announcement to all registered users |
+| `/admin announce zone <z> <msg>` | Broadcast announcement to zone subscribers |
 | `/admin help [command]` | Detailed help for a specific admin command |
 
 For detailed user flows, message formats, reputation rules, and zone lists, see [`parking_warden_bot_spec.md`](parking_warden_bot_spec.md).
