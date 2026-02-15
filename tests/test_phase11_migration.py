@@ -1,9 +1,16 @@
 """Phase 11 migration smoke tests."""
 
-from importlib import import_module
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from unittest.mock import patch
 
-migration = import_module("alembic.versions.004_phase11_config_overrides")
+MIGRATION_PATH = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "004_phase11_config_overrides.py"
+_SPEC = spec_from_file_location("phase11_migration_004", MIGRATION_PATH)
+if _SPEC is None or _SPEC.loader is None:
+    raise RuntimeError(f"Unable to load migration module from {MIGRATION_PATH}")
+
+migration = module_from_spec(_SPEC)
+_SPEC.loader.exec_module(migration)
 
 
 def test_migration_identifiers():

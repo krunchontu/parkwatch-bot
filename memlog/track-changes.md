@@ -15,3 +15,4 @@
 - Updated `memlog/progress.md` to Phase 1.5 with post-implementation next steps.
 
 - Fixed stale `parking_warden_bot_spec.md` heading text from “with Phase 11 planned” to completed Phase 11 wording.
+- Fixed `tests/test_phase11_migration.py` import mechanism to load migration module from filesystem path instead of `alembic.versions` package import, resolving CI collection error.
