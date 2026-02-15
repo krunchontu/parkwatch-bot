@@ -215,7 +215,9 @@ async def handle_description_input(update: Update, context: ContextTypes.DEFAULT
     lat = context.user_data.get("pending_report_lat")
     lng = context.user_data.get("pending_report_lng")
 
-    confirm_text = f"\u26a0\ufe0f Confirm warden sighting:\n\n\U0001f4cd Zone: {zone_name}\n\U0001f4dd Location: {description}"
+    confirm_text = (
+        f"\u26a0\ufe0f Confirm warden sighting:\n\n\U0001f4cd Zone: {zone_name}\n\U0001f4dd Location: {description}"
+    )
     if lat and lng:
         confirm_text += f"\n\U0001f310 GPS: {lat:.6f}, {lng:.6f}"
 
@@ -477,7 +479,9 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
             [
                 [
                     InlineKeyboardButton(f"\U0001f44d Accurate ({pos})", callback_data=f"feedback_pos_{sighting_id}"),
-                    InlineKeyboardButton(f"\U0001f44e False alarm ({neg})", callback_data=f"feedback_neg_{sighting_id}"),
+                    InlineKeyboardButton(
+                        f"\U0001f44e False alarm ({neg})", callback_data=f"feedback_neg_{sighting_id}"
+                    ),
                 ]
             ]
         )
@@ -611,7 +615,8 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return AWAITING_DESCRIPTION
 
     await update.message.reply_text(
-        f"\U0001f4cd Detected zone: {nearest_zone}\n\U0001f310 GPS: {lat:.6f}, {lng:.6f}", reply_markup=ReplyKeyboardRemove()
+        f"\U0001f4cd Detected zone: {nearest_zone}\n\U0001f310 GPS: {lat:.6f}, {lng:.6f}",
+        reply_markup=ReplyKeyboardRemove(),
     )
     await update.message.reply_text(
         "\U0001f4dd Send a short description of the location:\n"

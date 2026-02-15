@@ -722,7 +722,9 @@ async def _admin_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, args
         detail=f"zone={deleted['zone']}, reporter={deleted['reporter_id']}",
     )
 
-    await update.message.reply_text(f"\U0001f5d1\ufe0f Sighting {sighting_id} has been deleted.\nZone: {deleted['zone']}")
+    await update.message.reply_text(
+        f"\U0001f5d1\ufe0f Sighting {sighting_id} has been deleted.\nZone: {deleted['zone']}"
+    )
 
 
 async def _admin_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -769,7 +771,9 @@ async def _admin_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"\n\u26a0\ufe0f Low-Accuracy Reporters ({len(low_accuracy)})\n\n"
         for r in low_accuracy[:10]:
             msg += f"\u2022 User {r['reporter_id']}: {r['accuracy'] * 100:.0f}% accuracy "
-            msg += f"(\U0001f44d{r['total_positive']}/\U0001f44e{r['total_negative']}, {r['sighting_count']} sightings)\n"
+            msg += (
+                f"(\U0001f44d{r['total_positive']}/\U0001f44e{r['total_negative']}, {r['sighting_count']} sightings)\n"
+            )
 
     msg += "\nUse /admin delete <id> confirm to remove a sighting."
     msg += "\nUse /admin ban <user_id> [reason] to ban a user."
@@ -874,7 +878,7 @@ async def _admin_announce(update: Update, context: ContextTypes.DEFAULT_TYPE, ar
         for region in ZONES.values():
             for z in region["zones"]:
                 if rest_lower.startswith(z.lower()):
-                    remainder = rest[len(z):].lstrip()
+                    remainder = rest[len(z) :].lstrip()
                     if remainder:  # must have message text after zone name
                         resolved_zone = z
                         msg_text = remainder
@@ -898,9 +902,7 @@ async def _admin_announce(update: Update, context: ContextTypes.DEFAULT_TYPE, ar
 
     else:
         await update.message.reply_text(
-            "Usage:\n"
-            "/admin announce all <message>\n"
-            "/admin announce zone <zone_name> <message>"
+            "Usage:\n/admin announce all <message>\n/admin announce zone <zone_name> <message>"
         )
         return
 

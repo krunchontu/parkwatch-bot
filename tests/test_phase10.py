@@ -440,9 +440,7 @@ class TestAdminAnnounce:
         }
 
         # First send succeeds, second raises Forbidden
-        context.bot.send_message = AsyncMock(
-            side_effect=[None, TgForbidden("Forbidden: bot was blocked by the user")]
-        )
+        context.bot.send_message = AsyncMock(side_effect=[None, TgForbidden("Forbidden: bot was blocked by the user")])
         mock_db = self._mock_db()
 
         self._run(update, context, mock_db)

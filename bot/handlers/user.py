@@ -44,8 +44,7 @@ async def handle_start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "start_subscribe":
         keyboard = [
-            [InlineKeyboardButton(region["name"], callback_data=f"region_{key}")]
-            for key, region in ZONES.items()
+            [InlineKeyboardButton(region["name"], callback_data=f"region_{key}")] for key, region in ZONES.items()
         ]
         await query.edit_message_text(
             "Which areas do you want alerts for?",
@@ -237,7 +236,9 @@ async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFA
 
     if data == "unsub_all":
         await db.clear_subscriptions(user_id)
-        await query.edit_message_text("\U0001f5d1\ufe0f Unsubscribed from all zones.\n\nUse /start to subscribe to new zones.")
+        await query.edit_message_text(
+            "\U0001f5d1\ufe0f Unsubscribed from all zones.\n\nUse /start to subscribe to new zones."
+        )
         return
 
     # Single zone unsubscribe
@@ -433,8 +434,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if recent_count >= 1:
         await update.message.reply_text(
-            "\u23f3 You can only send one feedback message per hour.\n"
-            "Please try again later."
+            "\u23f3 You can only send one feedback message per hour.\nPlease try again later."
         )
         return
 
@@ -468,6 +468,5 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Confirm to user
     await update.message.reply_text(
-        "\u2705 Thanks! Your feedback has been sent to the bot admins.\n"
-        "We appreciate your input!"
+        "\u2705 Thanks! Your feedback has been sent to the bot admins.\nWe appreciate your input!"
     )
