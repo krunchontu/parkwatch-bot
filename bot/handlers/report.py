@@ -23,18 +23,17 @@ from config import (
 )
 
 from ..database import get_db
-from ..services.moderation import ban_check, _check_auto_flag
+from ..services.moderation import _check_auto_flag, ban_check
 from ..services.notifications import broadcast_alert
 from ..ui.messages import build_alert_message
 from ..utils import (
-    SGT,
     generate_sighting_id,
     get_accuracy_indicator,
     get_reporter_badge,
     haversine_meters,
     sanitize_description,
 )
-from ..zones import ZONES, ZONE_COORDS
+from ..zones import ZONE_COORDS, ZONES
 
 logger = logging.getLogger(__name__)
 

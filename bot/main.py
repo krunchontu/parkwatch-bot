@@ -27,7 +27,9 @@ from config import (
 )
 
 from .database import close_db, get_db, init_db
-from .handlers.admin import admin_command
+
+# Backward-compatible re-exports (tests import these from bot.main)
+from .handlers.admin import ADMIN_COMMANDS_DETAILED, ADMIN_COMMANDS_HELP, admin_command, admin_only  # noqa: F401
 from .handlers.report import (
     AWAITING_DESCRIPTION,
     AWAITING_LOCATION,
@@ -69,9 +71,6 @@ from .handlers.user import (
 )
 from .health import start_health_server, stop_health_server
 from .logging_config import setup_logging
-
-# Backward-compatible re-exports (tests import these from bot.main)
-from .handlers.admin import ADMIN_COMMANDS_DETAILED, ADMIN_COMMANDS_HELP, admin_only  # noqa: F401
 from .services.moderation import _check_auto_flag, ban_check  # noqa: F401
 from .ui.messages import build_alert_message  # noqa: F401
 from .utils import (  # noqa: F401

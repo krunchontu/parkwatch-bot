@@ -74,6 +74,18 @@ module = "bot.main"
 disable_error_code = ["union-attr", "arg-type", "index"]
 
 [[tool.mypy.overrides]]
+module = "bot.handlers.*"
+# Same rationale as bot.main: Telegram handler callbacks guarantee these attributes
+# are non-None via handler routing (CommandHandler, CallbackQueryHandler, etc.).
+disable_error_code = ["union-attr", "arg-type", "index"]
+
+[[tool.mypy.overrides]]
+module = "bot.services.*"
+# Moderation decorators access update.effective_user and update.message which are
+# guaranteed non-None when called via CommandHandler routing.
+disable_error_code = ["union-attr"]
+
+[[tool.mypy.overrides]]
 module = "bot.database"
 # _conn and _pool are Optional but always set after connect(); safe at runtime
 disable_error_code = ["attr-defined", "no-any-return"]

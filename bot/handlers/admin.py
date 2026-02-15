@@ -3,7 +3,7 @@
 import asyncio
 import contextlib
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import timezone
 
 from telegram import Update
 from telegram.error import Forbidden
@@ -892,6 +892,7 @@ async def _admin_announce(update: Update, context: ContextTypes.DEFAULT_TYPE, ar
 
         recipients = await db.get_zone_subscribers(resolved_zone)
         scope = f"zone: {resolved_zone}"
+        assert msg_text is not None  # guaranteed by `if remainder:` check above
         rest = msg_text  # for raw_text storage
         display_msg = f"\U0001f4e2 Announcement \u2014 {resolved_zone}\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n{msg_text}"
 
