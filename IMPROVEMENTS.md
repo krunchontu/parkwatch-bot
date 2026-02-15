@@ -2,13 +2,13 @@
 
 ## Audit Summary
 
-**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 8 update), 2026-02-14 (Phase 9 update)
+**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 8 update), 2026-02-14 (Phase 9 update), 2026-02-15 (Phase 10 planning)
 **Scope:** Full code review against `parking_warden_bot_spec.md` and `README.md`
 **Files reviewed:** `bot/main.py`, `bot/database.py`, `bot/health.py`, `bot/logging_config.py`, `config.py`, `requirements.txt`, `.env.example`
 
 ---
 
-## Status: Phases 1–9 Complete
+## Status: Phases 1–9 Complete, Phase 10 In Progress
 
 Phases 1 through 9 addressed all critical bugs, UX issues, data persistence, robustness gaps, known code defects, established automated testing and CI, hardened the bot for production deployment, added admin foundation with visibility tools, and implemented user management with content moderation. All items below are checked off and verified in the current codebase.
 
@@ -98,7 +98,7 @@ Automated test suite and CI pipeline to maintain code quality and prevent regres
 
 ### Phase 7: Production Infrastructure ✅
 
-Harden deployment, observability, and schema management for real-world scale. Separated from admin functionality (Phase 8–10) which is a distinct feature domain.
+Harden deployment, observability, and schema management for real-world scale. Separated from admin functionality (Phase 8–11) which is a distinct feature domain.
 
 - [x] **7.1** Webhook mode support (alongside polling) — set `WEBHOOK_URL` to enable; bot auto-detects and switches from `run_polling()` to `run_webhook()` with Telegram-compatible URL path; `PORT` configurable via env var
 - [x] **7.2** Health check endpoint — standalone asyncio HTTP server in `bot/health.py`; responds to `GET /health` with JSON status (version, mode, timestamp); configurable via `HEALTH_CHECK_ENABLED` and `HEALTH_CHECK_PORT`; lifecycle managed in `post_init`/`post_shutdown`; Railway config updated with `healthcheckPath = "/health"`
@@ -248,59 +248,128 @@ Give admins the ability to remove bad actors and false content. Critical for pla
 
 ---
 
-### Phase 10: Admin — Broadcast & Operations
+### Phase 10: Architecture, UX & Communication
 
-Operational tools for communicating with users, managing system state, and performing maintenance tasks.
+Structural improvements to reduce maintenance debt, close the admin-user communication loop, and improve discoverability. Prioritised based on external code review feedback (2026-02-15).
 
-**Why this phase exists:** Admins need to communicate service changes, perform maintenance, and extract data. These operations are lower priority than visibility (Phase 8) and moderation (Phase 9) but essential for sustained production operation.
+**Why this phase exists:** `bot/main.py` at 2,278 lines is a monolith that blends command routing, business logic, message rendering, and admin operations. Every subsequent feature added to this file increases maintenance cost and onboarding time. Refactoring first ensures items 10.3–10.5 land as clean, isolated modules. The review also identified missing two-way communication (users cannot reach admins; admins cannot announce to users) and UX that depends too heavily on command literacy.
 
-#### 10.1 Broadcast Messaging
+#### 10.1 Documentation Cleanup
 
-- [ ] **10.1.1** `/admin broadcast <message>` — send a message to all registered users:
+- [x] **10.1.1** Fix README version drift — update stale `1.2.0` references in example output to match `BOT_VERSION = "1.3.0"` (lines 86, 490)
+- [ ] **10.1.2** Consolidate README and spec — trim `README.md` to operator essentials (setup, deployment, env vars, command reference); move deep product flow details into `parking_warden_bot_spec.md` as the single maintained spec; eliminate duplicated content between the two files
+- [ ] **10.1.3** Update file reference table and line counts in IMPROVEMENTS.md after refactor
+
+#### 10.2 Refactor `bot/main.py` into Modules
+
+- [ ] **10.2.1** Extract zone data → `bot/zones.py`:
+  - `ZONES` dict (80 zones across 6 regions), `ZONE_COORDS` coordinate table
+- [ ] **10.2.2** Extract utility functions → `bot/utils.py`:
+  - `haversine_meters()`, `get_reporter_badge()`, `get_accuracy_indicator()`, `generate_sighting_id()`, `sanitize_description()`
+- [ ] **10.2.3** Extract UI helpers → `bot/ui/keyboards.py`:
+  - `build_zone_keyboard()`, future menu keyboards
+- [ ] **10.2.4** Extract message builders → `bot/ui/messages.py`:
+  - `build_alert_message()`, future message templates
+- [ ] **10.2.5** Extract notification logic → `bot/services/notifications.py`:
+  - Broadcast/fanout to zone subscribers, blocked-user cleanup
+- [ ] **10.2.6** Extract moderation utilities → `bot/services/moderation.py`:
+  - `ban_check` decorator, `_check_auto_flag()`, auto-ban escalation logic
+- [ ] **10.2.7** Extract user command handlers → `bot/handlers/user.py`:
+  - `/start`, `/subscribe`, `/unsubscribe`, `/myzones`, `/help`, `/mystats`, `/share`
+- [ ] **10.2.8** Extract report flow → `bot/handlers/report.py`:
+  - ConversationHandler state machine (6 states), feedback handler, `/recent`
+- [ ] **10.2.9** Extract admin command handlers → `bot/handlers/admin.py`:
+  - `admin_only` decorator, `/admin` router, all admin subcommands
+- [ ] **10.2.10** Slim down `bot/main.py` to application wiring only:
+  - Application creation, handler registration, lifecycle hooks, `main()` entrypoint
+  - Target: <100 lines
+- [ ] **10.2.11** Verify all 217 existing tests pass after refactor (zero functional changes)
+- [ ] **10.2.12** Update CI if import paths change
+
+#### 10.3 Add `/feedback` Command (User → Admin)
+
+- [ ] **10.3.1** `/feedback <message>` — relay user text to all admin users:
+  - Forward message with sender info (user ID, username, badge, report count)
+  - Confirm to user that feedback was sent
+  - Rate limit: 1 feedback message per user per hour (prevent spam)
+- [ ] **10.3.2** Log to `admin_actions` (action: `user_feedback`, target: user ID, detail: message preview)
+- [ ] **10.3.3** Database method: `count_user_feedback_since()` for rate limiting
+- [ ] **10.3.4** Add to `/help` output and `/start` welcome message
+- [ ] **10.3.5** Tests for feedback command, rate limiting, and admin relay
+
+#### 10.4 Add `/admin announce` (Admin → Users)
+
+- [ ] **10.4.1** `/admin announce all <message>` — broadcast to all registered users:
   - Confirmation step: show message preview + recipient count, require explicit confirm
   - Rate-limited delivery (20 messages/second to respect Telegram API limits)
   - Delivery report: sent count, failed count, blocked users cleaned up
   - Log to `admin_actions` with message preview and delivery stats
-- [ ] **10.1.2** `/admin broadcast zone:<zone_name> <message>` — targeted broadcast to subscribers of a specific zone
-- [ ] **10.1.3** `/admin broadcast region:<region_name> <message>` — targeted broadcast to subscribers of all zones in a region
-- [ ] **10.1.4** Database methods: `get_all_user_ids()`, `get_region_subscribers()`
+- [ ] **10.4.2** `/admin announce zone <zone_name> <message>` — broadcast to subscribers of a specific zone:
+  - Same confirmation + delivery report pattern
+  - Zone name validated against `ZONES` dict (case-insensitive)
+- [ ] **10.4.3** Database methods: `get_all_user_ids()` (all registered users), existing `get_zone_subscribers()` reused for zone-scoped
+- [ ] **10.4.4** Update `/admin` help text and `ADMIN_COMMANDS_HELP` / `ADMIN_COMMANDS_DETAILED` dicts
+- [ ] **10.4.5** Tests for announce command, confirmation flow, delivery, and audit logging
 
-#### 10.2 Maintenance Mode
+#### 10.5 UX Discoverability
 
-- [ ] **10.2.1** `/admin maintenance on [message]` — enable maintenance mode:
+- [ ] **10.5.1** Richer `/start` menu — replace plain text welcome with `InlineKeyboardMarkup` quick-action buttons:
+  - "Report a Sighting" → triggers `/report`
+  - "Subscribe to Zones" → triggers `/subscribe`
+  - "Recent Sightings" → triggers `/recent`
+  - "My Stats" → triggers `/mystats`
+  - "Send Feedback" → triggers `/feedback`
+  - "Help" → triggers `/help`
+- [ ] **10.5.2** Post-action contextual prompts — after key actions, suggest logical next steps:
+  - After first subscription: "You'll now get alerts for {zone}. Want to subscribe to more zones?"
+  - After report confirmation: "Report submitted! View /recent or check /mystats"
+- [ ] **10.5.3** Update `/help` to include `/feedback` and describe the `/start` menu
+- [ ] **10.5.4** Tests for start menu rendering and callback routing
+
+---
+
+### Phase 11: Admin — Operations
+
+Operational tools for managing system state, data, and runtime configuration.
+
+**Why this phase exists:** Admins need maintenance controls, data management, and runtime tuning without redeployment. Lower priority than communication (Phase 10) but essential for sustained production operation.
+
+#### 11.1 Maintenance Mode
+
+- [ ] **11.1.1** `/admin maintenance on [message]` — enable maintenance mode:
   - All user commands return a "Bot is under maintenance" message (with optional custom text)
   - Admin commands continue to work normally
   - Scheduled jobs (cleanup) are paused
   - Log to `admin_actions`
-- [ ] **10.2.2** `/admin maintenance off` — disable maintenance mode, resume normal operation
-- [ ] **10.2.3** `MAINTENANCE_MODE` runtime flag (in-memory, resets on restart — or persisted in DB for durability)
+- [ ] **11.1.2** `/admin maintenance off` — disable maintenance mode, resume normal operation
+- [ ] **11.1.3** `MAINTENANCE_MODE` runtime flag (in-memory, resets on restart — or persisted in DB for durability)
 
-#### 10.3 Data Management
+#### 11.2 Data Management
 
-- [ ] **10.3.1** `/admin purge sightings [days]` — manually trigger cleanup of sightings older than N days (default: `SIGHTING_RETENTION_DAYS`):
+- [ ] **11.2.1** `/admin purge sightings [days]` — manually trigger cleanup of sightings older than N days (default: `SIGHTING_RETENTION_DAYS`):
   - Confirmation step showing count of records to be deleted
   - Log to `admin_actions`
-- [ ] **10.3.2** `/admin purge user <user_id>` — delete all data for a specific user (sightings, feedback, subscriptions, user record):
+- [ ] **11.2.2** `/admin purge user <user_id>` — delete all data for a specific user (sightings, feedback, subscriptions, user record):
   - GDPR/privacy compliance for user data deletion requests
   - Confirmation step required
   - Log to `admin_actions`
-- [ ] **10.3.3** `/admin export stats` — generate and send a CSV/JSON summary:
+- [ ] **11.2.3** `/admin export stats` — generate and send a CSV/JSON summary:
   - User counts, zone subscription counts, sighting counts by zone, feedback summary
   - Sent as a Telegram document attachment
 
-#### 10.4 Runtime Configuration
+#### 11.3 Runtime Configuration
 
-- [ ] **10.4.1** `/admin config` — display current runtime settings:
+- [ ] **11.3.1** `/admin config` — display current runtime settings:
   - `MAX_REPORTS_PER_HOUR`, `DUPLICATE_WINDOW_MINUTES`, `DUPLICATE_RADIUS_METERS`
   - `SIGHTING_EXPIRY_MINUTES`, `SIGHTING_RETENTION_DAYS`, `FEEDBACK_WINDOW_HOURS`
   - `MAX_WARNINGS` (from Phase 9.3)
   - Maintenance mode status
-- [ ] **10.4.2** `/admin config <key> <value>` — adjust a runtime setting without restart:
+- [ ] **11.3.2** `/admin config <key> <value>` — adjust a runtime setting without restart:
   - Store overrides in `config_overrides` table (persisted across restarts)
   - Validate value ranges (e.g., `MAX_REPORTS_PER_HOUR` must be 1–100)
   - Log change to `admin_actions`
-- [ ] **10.4.3** `/admin config reset <key>` — revert a setting to its default (delete override)
-- [ ] **10.4.4** `config_overrides` table — schema:
+- [ ] **11.3.3** `/admin config reset <key>` — revert a setting to its default (delete override)
+- [ ] **11.3.4** `config_overrides` table — schema:
   ```sql
   config_overrides (
     key TEXT PK,
@@ -312,25 +381,25 @@ Operational tools for communicating with users, managing system state, and perfo
 
 ---
 
-### Phase 11: Growth Features
+### Phase 12: Growth Features
 
 User-facing features to drive engagement and organic growth.
 
-- [ ] **11.1** Weekly/monthly leaderboard (top reporters by report count and accuracy)
-- [ ] **11.2** Inline mode — query `@parkwatch_bot Orchard` from any chat to check sightings
-- [ ] **11.3** Warden activity heatmaps by time/day
-- [ ] **11.4** Deep linking for referral tracking (`/start ref_<user_id>`)
-- [ ] **11.5** Multi-language support (i18n) — start with English + Chinese
+- [ ] **12.1** Weekly/monthly leaderboard (top reporters by report count and accuracy)
+- [ ] **12.2** Inline mode — query `@parkwatch_bot Orchard` from any chat to check sightings
+- [ ] **12.3** Warden activity heatmaps by time/day
+- [ ] **12.4** Deep linking for referral tracking (`/start ref_<user_id>`)
+- [ ] **12.5** Multi-language support (i18n) — start with English + Chinese
 
-### Phase 12: Monetisation
+### Phase 13: Monetisation
 
-- [ ] **12.1** Freemium model (1 zone free, premium for unlimited)
-- [ ] **12.2** Sponsored alerts from parking providers
-- [ ] **12.3** Business API for fleet managers
+- [ ] **13.1** Freemium model (1 zone free, premium for unlimited)
+- [ ] **13.2** Sponsored alerts from parking providers
+- [ ] **13.3** Business API for fleet managers
 
 ---
 
-## Admin Command Reference (Phases 8–10)
+## Admin Command Reference (Phases 8–11)
 
 Quick reference for all admin commands once fully implemented.
 
@@ -348,18 +417,23 @@ Quick reference for all admin commands once fully implemented.
 | `/admin delete <sighting_id>` | 9.2 | Delete a sighting |
 | `/admin review` | 9.2 | View flagged sightings queue |
 | `/admin warn <id> [msg]` | 9.3 | Warn a user |
-| `/admin broadcast <msg>` | 10.1 | Broadcast to all users |
-| `/admin broadcast zone:<z> <msg>` | 10.1 | Broadcast to zone subscribers |
-| `/admin broadcast region:<r> <msg>` | 10.1 | Broadcast to region subscribers |
-| `/admin maintenance on\|off` | 10.2 | Toggle maintenance mode |
-| `/admin purge sightings [days]` | 10.3 | Clean up old sightings |
-| `/admin purge user <id>` | 10.3 | Delete all user data (GDPR) |
-| `/admin export stats` | 10.3 | Export stats as CSV/JSON |
-| `/admin config` | 10.4 | View runtime settings |
-| `/admin config <key> <val>` | 10.4 | Adjust a setting at runtime |
-| `/admin config reset <key>` | 10.4 | Reset setting to default |
+| `/admin announce all <msg>` | 10.4 | Announce to all users |
+| `/admin announce zone <z> <msg>` | 10.4 | Announce to zone subscribers |
+| `/admin maintenance on\|off` | 11.1 | Toggle maintenance mode |
+| `/admin purge sightings [days]` | 11.2 | Clean up old sightings |
+| `/admin purge user <id>` | 11.2 | Delete all user data (GDPR) |
+| `/admin export stats` | 11.2 | Export stats as CSV/JSON |
+| `/admin config` | 11.3 | View runtime settings |
+| `/admin config <key> <val>` | 11.3 | Adjust a setting at runtime |
+| `/admin config reset <key>` | 11.3 | Reset setting to default |
 
-## Database Changes (Phases 8–10)
+## User Command Reference (Phase 10+)
+
+| Command | Phase | Description |
+|---------|-------|-------------|
+| `/feedback <message>` | 10.3 | Send feedback to bot admins |
+
+## Database Changes (Phases 8–11)
 
 | Change | Phase | Status | Description |
 |--------|-------|--------|-------------|
@@ -367,7 +441,7 @@ Quick reference for all admin commands once fully implemented.
 | New table: `banned_users` | 9.1 | ✅ Done | Banned user records with reason and banning admin |
 | New column: `sightings.flagged` | 9.2 | ✅ Done | Integer flag for moderation queue (0/1) |
 | New column: `users.warnings` | 9.3 | ✅ Done | Warning count per user (integer, default 0) |
-| New table: `config_overrides` | 10.4 | Planned | Runtime configuration overrides |
+| New table: `config_overrides` | 11.3 | Planned | Runtime configuration overrides |
 
 ## Environment Variables Added (Phase 7+)
 
@@ -419,4 +493,4 @@ Quick reference for all admin commands once fully implemented.
 
 ---
 
-*Last updated: 2026-02-14 (Phase 9)*
+*Last updated: 2026-02-15 (Phase 10 planning)*
