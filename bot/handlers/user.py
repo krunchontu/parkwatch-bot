@@ -18,15 +18,69 @@ logger = logging.getLogger(__name__)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command."""
-    keyboard = [[InlineKeyboardButton(region["name"], callback_data=f"region_{key}")] for key, region in ZONES.items()]
+    """Handle /start command — show quick-action menu."""
+    keyboard = [
+        [InlineKeyboardButton("\U0001f4cd Subscribe to Zones", callback_data="start_subscribe")],
+        [InlineKeyboardButton("\U0001f6a8 Report a Sighting", callback_data="start_report")],
+        [InlineKeyboardButton("\U0001f4cb Recent Sightings", callback_data="start_recent")],
+        [InlineKeyboardButton("\U0001f4ca My Stats", callback_data="start_mystats")],
+        [InlineKeyboardButton("\U0001f4ac Send Feedback", callback_data="start_feedback")],
+        [InlineKeyboardButton("\u2753 Help", callback_data="start_help")],
+    ]
 
     await update.message.reply_text(
         "Welcome to ParkWatch SG! \U0001f697\n\n"
         "I'll alert you when parking wardens are spotted nearby.\n\n"
-        "To get started, which areas do you want alerts for?",
+        "What would you like to do?",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
+
+
+async def handle_start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle quick-action button clicks from the /start menu."""
+    query = update.callback_query
+    await query.answer()
+    action = query.data
+
+    if action == "start_subscribe":
+        keyboard = [
+            [InlineKeyboardButton(region["name"], callback_data=f"region_{key}")]
+            for key, region in ZONES.items()
+        ]
+        await query.edit_message_text(
+            "Which areas do you want alerts for?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+    elif action == "start_report":
+        await query.edit_message_text(
+            "\U0001f6a8 Use /report to report a warden sighting.\n\n"
+            "You can share your GPS location or select a zone manually."
+        )
+    elif action == "start_recent":
+        await query.edit_message_text(
+            "\U0001f4cb Use /recent to see recent sightings in your zones.\n\n"
+            "Subscribe to zones first to get personalized results."
+        )
+    elif action == "start_mystats":
+        await query.edit_message_text(
+            "\U0001f4ca Use /mystats to view your reporter stats and accuracy.\n\n"
+            "Start reporting sightings to build your profile!"
+        )
+    elif action == "start_feedback":
+        await query.edit_message_text(
+            "\U0001f4ac Use /feedback <message> to send feedback to the admins.\n\n"
+            "Example: /feedback Love this bot! Could you add more zones?"
+        )
+    elif action == "start_help":
+        await query.edit_message_text(
+            "\u2753 Use /help to see all available commands.\n\n"
+            "Key commands:\n"
+            "\u2022 /start \u2014 Main menu\n"
+            "\u2022 /subscribe \u2014 Add alert zones\n"
+            "\u2022 /report \u2014 Report a warden\n"
+            "\u2022 /recent \u2014 Recent sightings\n"
+            "\u2022 /feedback \u2014 Send feedback"
+        )
 
 
 async def handle_region_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,8 +150,11 @@ async def handle_zone_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sub_list = ", ".join(sorted(subs))
         await query.edit_message_text(
             f"\u2705 Subscribed to {len(subs)} zone(s): {sub_list}\n\n"
-            f"Use /subscribe to modify zones.\n"
-            f"Use /report to report a warden sighting."
+            f"You'll now get alerts when wardens are spotted in these zones.\n\n"
+            f"\U0001f4a1 What's next?\n"
+            f"\u2022 /subscribe \u2014 Add more zones\n"
+            f"\u2022 /report \u2014 Report a warden sighting\n"
+            f"\u2022 /recent \u2014 Check recent sightings"
         )
     else:
         await query.edit_message_text("You're not subscribed to any zones yet.\nUse /start to select zones.")
@@ -211,7 +268,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "\U0001f697 *ParkWatch SG Commands*\n\n"
         "*Getting Started:*\n"
-        "/start \u2014 Set up your alert zones\n"
+        "/start \u2014 Main menu with quick actions\n"
         "/subscribe \u2014 Add more zones\n"
         "/unsubscribe \u2014 Remove zones\n"
         "/myzones \u2014 View your subscriptions\n\n"

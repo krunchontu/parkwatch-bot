@@ -55,6 +55,7 @@ from .handlers.user import (
     feedback_command,
     handle_back_to_regions,
     handle_region_selection,
+    handle_start_menu,
     handle_unsubscribe_callback,
     handle_zone_done,
     handle_zone_selection,
@@ -92,7 +93,9 @@ async def handle_callback(update: Update, context):
     query = update.callback_query
     data = query.data
 
-    if data.startswith("region_"):
+    if data.startswith("start_"):
+        await handle_start_menu(update, context)
+    elif data.startswith("region_"):
         await handle_region_selection(update, context)
     elif data == "zone_done":
         await handle_zone_done(update, context)

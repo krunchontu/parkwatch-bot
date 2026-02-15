@@ -537,3 +537,141 @@ class TestAdminHelpIncludesAnnounce:
         from bot.handlers.admin import ADMIN_COMMANDS_DETAILED
 
         assert "announce" in ADMIN_COMMANDS_DETAILED
+
+
+# ---------------------------------------------------------------------------
+# 10.5 UX Discoverability — Richer /start Menu
+# ---------------------------------------------------------------------------
+class TestStartMenu:
+    """Tests for the richer /start menu with quick-action buttons."""
+
+    def test_start_shows_quick_action_buttons(self):
+        """The /start command should show quick-action inline buttons."""
+        from bot.handlers.user import start
+
+        update = MagicMock()
+        update.message.reply_text = AsyncMock()
+
+        asyncio.get_event_loop().run_until_complete(start(update, MagicMock()))
+
+        call_kwargs = update.message.reply_text.call_args
+        reply_markup = call_kwargs[1].get("reply_markup") or call_kwargs.kwargs.get("reply_markup")
+        assert reply_markup is not None
+
+        # Extract all callback_data values from the keyboard
+        callback_datas = []
+        for row in reply_markup.inline_keyboard:
+            for button in row:
+                callback_datas.append(button.callback_data)
+
+        assert "start_subscribe" in callback_datas
+        assert "start_report" in callback_datas
+        assert "start_recent" in callback_datas
+        assert "start_mystats" in callback_datas
+        assert "start_feedback" in callback_datas
+        assert "start_help" in callback_datas
+
+    def test_start_menu_subscribe_callback(self):
+        """Clicking 'Subscribe to Zones' should show region selection."""
+        from bot.handlers.user import handle_start_menu
+
+        update = MagicMock()
+        update.callback_query.data = "start_subscribe"
+        update.callback_query.answer = AsyncMock()
+        update.callback_query.edit_message_text = AsyncMock()
+
+        asyncio.get_event_loop().run_until_complete(handle_start_menu(update, MagicMock()))
+
+        update.callback_query.answer.assert_called_once()
+        call_kwargs = update.callback_query.edit_message_text.call_args
+        # Should show region keyboard
+        reply_markup = call_kwargs[1].get("reply_markup") or call_kwargs.kwargs.get("reply_markup")
+        assert reply_markup is not None
+        # Should contain region buttons
+        callback_datas = [btn.callback_data for row in reply_markup.inline_keyboard for btn in row]
+        assert any(d.startswith("region_") for d in callback_datas)
+
+    def test_start_menu_report_callback(self):
+        """Clicking 'Report a Sighting' should show report instructions."""
+        from bot.handlers.user import handle_start_menu
+
+        update = MagicMock()
+        update.callback_query.data = "start_report"
+        update.callback_query.answer = AsyncMock()
+        update.callback_query.edit_message_text = AsyncMock()
+
+        asyncio.get_event_loop().run_until_complete(handle_start_menu(update, MagicMock()))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "/report" in text
+
+    def test_start_menu_feedback_callback(self):
+        """Clicking 'Send Feedback' should show feedback instructions."""
+        from bot.handlers.user import handle_start_menu
+
+        update = MagicMock()
+        update.callback_query.data = "start_feedback"
+        update.callback_query.answer = AsyncMock()
+        update.callback_query.edit_message_text = AsyncMock()
+
+        asyncio.get_event_loop().run_until_complete(handle_start_menu(update, MagicMock()))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "/feedback" in text
+
+    def test_start_menu_help_callback(self):
+        """Clicking 'Help' should show help instructions."""
+        from bot.handlers.user import handle_start_menu
+
+        update = MagicMock()
+        update.callback_query.data = "start_help"
+        update.callback_query.answer = AsyncMock()
+        update.callback_query.edit_message_text = AsyncMock()
+
+        asyncio.get_event_loop().run_until_complete(handle_start_menu(update, MagicMock()))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "/help" in text
+
+
+class TestPostActionPrompts:
+    """Tests for contextual next-step prompts after actions."""
+
+    def test_zone_done_shows_next_steps(self):
+        """After subscribing, Done message should suggest next actions."""
+        from bot.handlers.user import handle_zone_done
+
+        update = MagicMock()
+        update.callback_query.answer = AsyncMock()
+        update.callback_query.edit_message_text = AsyncMock()
+        update.effective_user.id = 100
+
+        mock_db = MagicMock()
+        mock_db.get_subscriptions = AsyncMock(return_value={"Bugis", "Orchard"})
+
+        context = MagicMock()
+        context.user_data = {}
+
+        with patch("bot.handlers.user.get_db", return_value=mock_db):
+            asyncio.get_event_loop().run_until_complete(handle_zone_done(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "/subscribe" in text
+        assert "/report" in text
+        assert "/recent" in text
+
+
+class TestHelpDescribesStartMenu:
+    """Tests that /help mentions the /start menu."""
+
+    def test_help_describes_start_as_main_menu(self):
+        """Help text should describe /start as 'Main menu'."""
+        from bot.handlers.user import help_command
+
+        update = MagicMock()
+        update.message.reply_text = AsyncMock()
+
+        asyncio.get_event_loop().run_until_complete(help_command(update, MagicMock()))
+
+        help_text = update.message.reply_text.call_args[0][0]
+        assert "Main menu" in help_text or "main menu" in help_text
