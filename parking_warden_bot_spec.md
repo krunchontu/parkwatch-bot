@@ -632,23 +632,30 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] `/admin announce all|zone <msg>` — admin-to-user broadcasts
 - [x] UX discoverability (richer `/start` menu with inline keyboard actions)
 
-### Phase 11: Admin — Operations
-- [ ] `/admin maintenance on|off` — maintenance mode toggle
-- [ ] `/admin purge sightings [days]` and `/admin purge user <id>` (GDPR)
-- [ ] `/admin export stats` — CSV/JSON data export
-- [ ] `/admin config [key] [value]` — view/adjust runtime settings
+### Phase 11: Admin — Operations (Dependency-ordered)
+- [ ] **11.3 Runtime config first**: `config_overrides` + typed runtime setting accessor + allowlist/validation + audit old→new values
+- [ ] **11.1 Maintenance mode second**: persisted flag, report-conversation cancellation strategy, inline/query blocking, health degraded status, job soft-pause checks
+- [ ] **11.2 Data management third**: purge sightings (manual vs scheduled distinction), purge by zone, GDPR-complete user purge (including feedback given + recompute counters), CSV-first export
+- [ ] Add explicit Phase 11 test plan before closure
 
-### Phase 12: Growth Features
-- [ ] Leaderboards (weekly/monthly top reporters)
-- [ ] Inline mode (`@parkwatch_bot Orchard` from any chat)
-- [ ] Warden activity heatmaps by time/day
-- [ ] Deep linking for referral tracking
-- [ ] Multi-language support (i18n)
+### Phase 12: Growth Features (Re-scoped and prioritized)
+- [ ] 12.4 Deep linking/referrals first (schema + dedupe + GDPR cleanup integration)
+- [ ] 12.1 Leaderboards next (`/leaderboard`, defined windows, privacy opt-out)
+- [ ] 12.2 Inline mode after maintenance/ban parity and redaction/caching policy
+- [ ] 12.3 Replace "heatmaps" with text-first activity summaries initially
+- [ ] Move i18n to Phase 14 (scope too large for this phase)
 
-### Phase 13: Monetisation
-- [ ] Freemium model (1 zone free, premium for all)
-- [ ] Sponsored alerts from parking providers
-- [ ] Business API for fleet managers
+### Phase 13: Monetisation (Split into separate workstreams)
+- [ ] 13.A Freemium (policy, billing integration, grandfathering, compliance)
+- [ ] 13.B Sponsored alerts (labeling, moderation, frequency caps, opt-out)
+- [ ] 13.C Business API (separate product/infrastructure)
+- [ ] Add KPI validation gates before any monetisation launch
+
+### Phase 14: Internationalization (i18n)
+- [ ] Move i18n out of growth backlog into dedicated phase
+- [ ] Extract strings, add locale files, and language preference storage
+- [ ] Add `/language` command and baseline locales (`en`, `zh`)
+- [ ] Add i18n test coverage and fallback behavior checks
 
 ---
 
@@ -696,4 +703,4 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 ---
 
-*Last updated: February 2026 (Phase 10 complete — see IMPROVEMENTS.md)*
+*Last updated: February 2026 (Phase 10 complete; roadmap aligned through Phase 14 — see IMPROVEMENTS.md)*

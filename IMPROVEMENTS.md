@@ -2,7 +2,7 @@
 
 ## Audit Summary
 
-**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 8 update), 2026-02-14 (Phase 9 update), 2026-02-15 (Phase 10 planning)
+**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 8 update), 2026-02-14 (Phase 9 update), 2026-02-15 (Phase 10 planning), 2026-02-16 (Phase 11–14 roadmap alignment)
 **Scope:** Full code review against `parking_warden_bot_spec.md` and `README.md`
 **Files reviewed:** `bot/main.py`, `bot/database.py`, `bot/health.py`, `bot/logging_config.py`, `config.py`, `requirements.txt`, `.env.example`
 
@@ -326,74 +326,129 @@ Structural improvements to reduce maintenance debt, close the admin-user communi
 
 ---
 
-### Phase 11: Admin — Operations
+### Phase 11: Admin — Operations (Replanned)
 
-Operational tools for managing system state, data, and runtime configuration.
+Operational tools for managing runtime state, data lifecycle, and safe live operations.
 
-**Why this phase exists:** Admins need maintenance controls, data management, and runtime tuning without redeployment. Lower priority than communication (Phase 10) but essential for sustained production operation.
+**Execution order (dependency-aware):** **11.3 Runtime Configuration → 11.1 Maintenance Mode → 11.2 Data Management**.
 
-#### 11.1 Maintenance Mode
+#### 11.3 Runtime Configuration (must land first)
 
-- [ ] **11.1.1** `/admin maintenance on [message]` — enable maintenance mode:
-  - All user commands return a "Bot is under maintenance" message (with optional custom text)
-  - Admin commands continue to work normally
-  - Scheduled jobs (cleanup) are paused
-  - Log to `admin_actions`
-- [ ] **11.1.2** `/admin maintenance off` — disable maintenance mode, resume normal operation
-- [ ] **11.1.3** `MAINTENANCE_MODE` runtime flag (in-memory, resets on restart — or persisted in DB for durability)
-
-#### 11.2 Data Management
-
-- [ ] **11.2.1** `/admin purge sightings [days]` — manually trigger cleanup of sightings older than N days (default: `SIGHTING_RETENTION_DAYS`):
-  - Confirmation step showing count of records to be deleted
-  - Log to `admin_actions`
-- [ ] **11.2.2** `/admin purge user <user_id>` — delete all data for a specific user (sightings, feedback, subscriptions, user record):
-  - GDPR/privacy compliance for user data deletion requests
-  - Confirmation step required
-  - Log to `admin_actions`
-- [ ] **11.2.3** `/admin export stats` — generate and send a CSV/JSON summary:
-  - User counts, zone subscription counts, sighting counts by zone, feedback summary
-  - Sent as a Telegram document attachment
-
-#### 11.3 Runtime Configuration
-
-- [ ] **11.3.1** `/admin config` — display current runtime settings:
-  - `MAX_REPORTS_PER_HOUR`, `DUPLICATE_WINDOW_MINUTES`, `DUPLICATE_RADIUS_METERS`
-  - `SIGHTING_EXPIRY_MINUTES`, `SIGHTING_RETENTION_DAYS`, `FEEDBACK_WINDOW_HOURS`
-  - `MAX_WARNINGS` (from Phase 9.3)
-  - Maintenance mode status
-- [ ] **11.3.2** `/admin config <key> <value>` — adjust a runtime setting without restart:
-  - Store overrides in `config_overrides` table (persisted across restarts)
-  - Validate value ranges (e.g., `MAX_REPORTS_PER_HOUR` must be 1–100)
-  - Log change to `admin_actions`
-- [ ] **11.3.3** `/admin config reset <key>` — revert a setting to its default (delete override)
-- [ ] **11.3.4** `config_overrides` table — schema:
+- [ ] **11.3.1** Add `config_overrides` table via Alembic migration `004_phase11_config_overrides.py`:
   ```sql
   config_overrides (
-    key TEXT PK,
+    key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
     updated_by BIGINT NOT NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
   )
   ```
+- [ ] **11.3.2** Introduce a typed runtime-settings accessor (single source of truth) so handlers/jobs stop reading module-level constants directly.
+- [ ] **11.3.3** Add strict allowlist for mutable keys (`MAX_REPORTS_PER_HOUR`, `DUPLICATE_WINDOW_MINUTES`, `DUPLICATE_RADIUS_METERS`, `SIGHTING_EXPIRY_MINUTES`, `SIGHTING_RETENTION_DAYS`, `FEEDBACK_WINDOW_HOURS`, `MAX_WARNINGS`, `MAINTENANCE_MODE`, `MAINTENANCE_MESSAGE`).
+- [ ] **11.3.4** Forbid runtime mutation of sensitive/static keys (`TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, `DATABASE_PRIVATE_URL`, `ADMIN_USER_IDS`, webhook ports/URLs).
+- [ ] **11.3.5** `/admin config` and `/admin config <key> <value>` must validate and cast values by key type (int/bool/float/str) and fail-fast on invalid input.
+- [ ] **11.3.6** Audit log must store old value → new value, actor, and timestamp.
+- [ ] **11.3.7** `/admin config reset <key>` removes override and confirms effective default value.
+
+#### 11.1 Maintenance Mode (built on 11.3)
+
+- [ ] **11.1.1** `/admin maintenance on [message]` sets persisted maintenance flag/message in `config_overrides`.
+- [ ] **11.1.2** `/admin maintenance off` clears maintenance override and resumes normal operation.
+- [ ] **11.1.3** Define ConversationHandler behavior explicitly: active `/report` sessions are cancelled with a clear message and cleanup.
+- [ ] **11.1.4** During maintenance, user commands + inline queries are blocked; admin commands remain available.
+- [ ] **11.1.5** Scheduled jobs are soft-paused by flag check inside each job (no scheduler pause API assumption).
+- [ ] **11.1.6** `GET /health` returns degraded maintenance status (`status: "degraded"`, maintenance flag/message).
+- [ ] **11.1.7** `/admin stats` includes maintenance status so all admins can see current mode.
+- [ ] **11.1.8** Optional pre-maintenance broadcast: `/admin maintenance on --announce <msg>` preview + confirm flow.
+
+#### 11.2 Data Management
+
+- [ ] **11.2.1** `/admin purge sightings [days]` (ad-hoc/manual) must be explicitly separate from automated retention cleanup job.
+- [ ] **11.2.2** Add `/admin purge sightings zone <zone_name> [days]` for spam/retirement operations.
+- [ ] **11.2.3** `/admin purge user <user_id>` must remove: user row, subscriptions, sightings, feedback received, feedback given, bans, warnings, and admin-action references where required by policy.
+- [ ] **11.2.4** Purging feedback **given by** a user must recalculate affected sighting counters (`feedback_positive`/`feedback_negative`) transactionally.
+- [ ] **11.2.5** `/admin export stats` defaults to CSV (operator-friendly), optional JSON, and excludes personal data by default.
+- [ ] **11.2.6** Every purge/export command requires preview + explicit confirm.
+
+#### 11.4 Testing (required before phase close)
+
+- [ ] **11.4.1** Unit tests for runtime setting casting/validation and allowlist enforcement.
+- [ ] **11.4.2** Integration tests for maintenance gating (commands, report conversation cancellation, inline blocking, job skip behavior).
+- [ ] **11.4.3** Integration tests for purge flows, feedback counter recalculation, and export file generation.
+- [ ] **11.4.4** Migration tests for `004_phase11_config_overrides.py`.
 
 ---
 
-### Phase 12: Growth Features
+### Phase 12: Growth Features (Re-scoped)
 
-User-facing features to drive engagement and organic growth.
+Prioritize by value-to-effort and dependency fit:
 
-- [ ] **12.1** Weekly/monthly leaderboard (top reporters by report count and accuracy)
-- [ ] **12.2** Inline mode — query `@parkwatch_bot Orchard` from any chat to check sightings
-- [ ] **12.3** Warden activity heatmaps by time/day
-- [ ] **12.4** Deep linking for referral tracking (`/start ref_<user_id>`)
-- [ ] **12.5** Multi-language support (i18n) — start with English + Chinese
+1. **12.4 Deep linking/referrals** → 2. **12.1 Leaderboards** → 3. **12.2 Inline mode** → 4. **12.3 Activity summary (text-first)** → 5. **12.5 i18n (move to Phase 14)**.
 
-### Phase 13: Monetisation
+#### 12.4 Deep linking/referrals (first)
+- [ ] Add referral schema (`referrals` table or `users.referred_by` + attribution metadata).
+- [ ] Dedupe rules: first valid referral only; ignore self-referral and pre-existing users.
+- [ ] GDPR linkage: referral data must be purged by `/admin purge user`.
+- [ ] Define incentive policy (if any) before implementation.
 
-- [ ] **13.1** Freemium model (1 zone free, premium for unlimited)
-- [ ] **13.2** Sponsored alerts from parking providers
-- [ ] **13.3** Business API for fleet managers
+#### 12.1 Leaderboards
+- [ ] Ship as `/leaderboard` command first (avoid scheduled broadcast complexity in v1).
+- [ ] Define windows explicitly: rolling 7-day + all-time.
+- [ ] Add minimum threshold and privacy opt-out support.
+- [ ] Add DB query methods for time-windowed ranking and accuracy tie-breaks.
+
+#### 12.2 Inline mode
+- [ ] Define `InlineQueryResultArticle` format and redaction policy (no reporter identity, no precise GPS by default).
+- [ ] Add inline-specific maintenance + ban checks (existing `ban_check` is message-based only).
+- [ ] Use Telegram inline query caching (`cache_time`) and throttling controls.
+
+#### 12.3 Replace heatmaps with text-first activity summaries
+- [ ] Implement `/activity <zone?>` with hourly/day-of-week summaries (80/20 value without image rendering stack).
+- [ ] Keep SQL dialect differences explicit (`strftime` SQLite vs `EXTRACT` PostgreSQL) behind DB abstraction.
+
+#### 12.5 i18n (move out)
+- [ ] Move to **Phase 14** due to scope (string extraction, locale files, language preference storage, `/language` UX).
+
+#### 12.6 Testing
+- [ ] Add tests per feature before marking complete (referrals, leaderboard windows, inline redaction/gating, activity summaries).
+
+---
+
+### Phase 13: Monetisation (Split into separate validated workstreams)
+
+Do not implement as one blended phase. Treat each item as its own mini-program with validation gates.
+
+#### 13.A Freemium
+- [ ] Define product policy first: free tier limits, grandfathering for existing users, trial rules, rollback plan.
+- [ ] Add schema (`users.is_premium`, `premium_expires_at`, billing metadata).
+- [ ] Integrate Telegram Payments + provider and write compliance checklist (SG legal/tax/e-commerce review).
+
+#### 13.B Sponsored alerts
+- [ ] Build sponsor ops workflow (submission, moderation approval, scheduling, targeting, frequency cap).
+- [ ] Add hard separation/labeling so sponsored content cannot be confused with safety alerts.
+- [ ] Provide user opt-out and enforce maximum ad frequency.
+
+#### 13.C Business API
+- [ ] Treat as separate product with dedicated API surface, auth, rate limits, and infrastructure.
+- [ ] Complete demand validation before engineering build.
+
+#### 13.D Monetisation validation gates
+- [ ] Require baseline KPIs (active users, retention, false-alarm rate, delivery success) before launch.
+- [ ] Run limited pilot and review trust impact before broad rollout.
+
+---
+
+### Phase 14: Internationalization (i18n)
+
+Moved from Phase 12 due to scope and cross-cutting impact.
+
+- [ ] Extract user-facing strings into translation keys (handlers, services, UI builders, admin messages).
+- [ ] Choose localization format and loader (e.g., JSON/gettext) with fallback behavior.
+- [ ] Add user language preference persistence (`users.language` or dedicated profile table).
+- [ ] Add `/language` command and onboarding language selection.
+- [ ] Provide baseline locales: English (`en`) and Simplified Chinese (`zh`).
+- [ ] Ensure all new features after Phase 14 are localization-ready by default.
+- [ ] Add i18n test coverage (key completeness, fallback, selected-language rendering).
 
 ---
 
@@ -506,4 +561,4 @@ Quick reference for all admin commands once fully implemented.
 
 ---
 
-*Last updated: 2026-02-15 (Phase 10 complete)*
+*Last updated: 2026-02-16 (Phase 10 complete; roadmap aligned through Phase 14)*
