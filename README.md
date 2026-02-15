@@ -83,7 +83,7 @@ python -m bot.main
 
 You should see:
 ```
-2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.2.0 starting in polling mode
+2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.3.0 starting in polling mode
 2026-XX-XX XX:XX:XX - bot.health - INFO - Health check server started on port 8080 (GET /health)
 ```
 
@@ -487,7 +487,7 @@ PORT=8443  # or let Railway inject PORT
 A lightweight HTTP server runs alongside the bot (enabled by default) and responds to `GET /health`:
 
 ```json
-{"status": "ok", "version": "1.2.0", "mode": "polling", "timestamp": "2026-02-13T12:00:00+00:00"}
+{"status": "ok", "version": "1.3.0", "mode": "polling", "timestamp": "2026-02-13T12:00:00+00:00"}
 ```
 
 Configure with `HEALTH_CHECK_ENABLED`, `HEALTH_CHECK_PORT` env vars. Railway's `healthcheckPath` is pre-configured to `/health`.
