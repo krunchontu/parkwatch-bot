@@ -20,9 +20,10 @@ ParkWatch SG is a Telegram bot that crowdsources real-time parking warden sighti
 | `/recent` | View recent sightings (30 mins) | Display filtered list |
 | `/mystats` | View reporter stats and accuracy | Display stats |
 | `/share` | Generate invite message | Display shareable message |
+| `/feedback <message>` | Send feedback to admins | Relay message, confirm to user |
 | `/help` | Show all commands | Display help text |
 
-## Admin Commands (Phases 8–9, with Phase 10–11 planned)
+## Admin Commands (Phases 8–10, with Phase 11 planned)
 
 Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
 
@@ -40,8 +41,8 @@ Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
 | `/admin delete <sighting_id> [confirm]` | 9 | Done | Delete a sighting (two-step confirmation) |
 | `/admin review` | 9 | Done | View moderation queue of flagged sightings |
 | `/admin help [command]` | 8 | Done | Detailed help for a specific admin command |
-| `/admin announce all <msg>` | 10 | Planned | Announce to all registered users |
-| `/admin announce zone <z> <msg>` | 10 | Planned | Announce to zone subscribers |
+| `/admin announce all <msg>` | 10 | Done | Announce to all registered users |
+| `/admin announce zone <z> <msg>` | 10 | Done | Announce to zone subscribers |
 | `/admin maintenance on\|off` | 11 | Planned | Toggle maintenance mode |
 | `/admin config [key] [value]` | 11 | Planned | View/adjust runtime settings |
 
@@ -472,7 +473,7 @@ Set `WEBHOOK_URL` to enable webhook mode. Structured JSON logging available via 
 | Logging | Structured JSON or human-readable text (`bot/logging_config.py`) |
 | Error Tracking | Sentry (optional, via `sentry-sdk`) |
 | Health Check | Asyncio HTTP server (`GET /health`) |
-| Testing | pytest + pytest-asyncio (217 tests) |
+| Testing | pytest + pytest-asyncio (257 tests) |
 | Linting | ruff (lint + format) |
 | Type Checking | mypy |
 | CI | GitHub Actions (lint, typecheck, test on 3.10/3.11/3.12) |
@@ -624,12 +625,12 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] User lookup shows ban status and warning count
 - [x] Alembic migration 003, 47 new tests (217 total)
 
-### Phase 10: Architecture, UX & Communication
-- [ ] Documentation cleanup (README/spec consolidation)
-- [ ] Refactor `bot/main.py` into modules (`bot/zones.py`, `bot/utils.py`, `bot/handlers/`, `bot/services/`)
-- [ ] `/feedback <message>` — user-to-admin communication channel
-- [ ] `/admin announce all|zone <msg>` — admin-to-user broadcasts
-- [ ] UX discoverability (richer `/start` menu with inline keyboard actions)
+### Phase 10: Architecture, UX & Communication ✅
+- [x] Documentation cleanup (README/spec consolidation)
+- [x] Refactor `bot/main.py` into modules (`bot/zones.py`, `bot/utils.py`, `bot/handlers/`, `bot/services/`)
+- [x] `/feedback <message>` — user-to-admin communication channel
+- [x] `/admin announce all|zone <msg>` — admin-to-user broadcasts
+- [x] UX discoverability (richer `/start` menu with inline keyboard actions)
 
 ### Phase 11: Admin — Operations
 - [ ] `/admin maintenance on|off` — maintenance mode toggle
@@ -655,12 +656,20 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 | File | Purpose |
 |------|---------|
-| `bot/main.py` | Bot logic, user handlers, admin commands (Phases 8–9), conversation flow, webhook/polling |
-| `bot/database.py` | Dual-driver database abstraction incl. admin + moderation queries (SQLite/PostgreSQL) |
+| `bot/main.py` | Application wiring, handler registration, lifecycle hooks, entrypoint |
+| `bot/database.py` | Dual-driver database abstraction incl. admin + moderation + Phase 10 queries (SQLite/PostgreSQL) |
+| `bot/zones.py` | Zone data: `ZONES` dict (80 zones, 6 regions), `ZONE_COORDS` coordinate table |
+| `bot/utils.py` | Pure helpers: haversine, badges, accuracy, sanitization |
+| `bot/handlers/user.py` | User commands: `/start`, `/subscribe`, `/unsubscribe`, `/myzones`, `/help`, `/mystats`, `/share`, `/feedback` |
+| `bot/handlers/report.py` | Report flow: 6-state ConversationHandler, feedback handler, `/recent` |
+| `bot/handlers/admin.py` | Admin system: `admin_only` decorator, `/admin` router, all subcommands incl. announce |
+| `bot/services/notifications.py` | Alert broadcast with blocked-user cleanup |
+| `bot/services/moderation.py` | `ban_check` decorator, `_check_auto_flag()` |
+| `bot/ui/keyboards.py` | Keyboard builders: `build_zone_keyboard()` |
+| `bot/ui/messages.py` | Message builders: `build_alert_message()` |
 | `bot/health.py` | Health check HTTP server (asyncio, `GET /health`) |
 | `bot/logging_config.py` | Structured logging configuration (text/JSON) |
-| `bot/__init__.py` | Package marker |
-| `config.py` | Environment config and bot settings (Phases 1–9, incl. `MAX_WARNINGS`) |
+| `config.py` | Environment config and bot settings (Phases 1–10, incl. `MAX_WARNINGS`) |
 | `pyproject.toml` | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | Runtime dependencies (legacy compat for platforms without pyproject.toml) |
 | `alembic.ini` | Alembic migration framework configuration |
@@ -675,15 +684,16 @@ The database driver is selected automatically based on `DATABASE_URL`:
 | `tests/test_phase7.py` | Phase 7 infrastructure tests (22 tests) |
 | `tests/test_phase8.py` | Phase 8 admin foundation tests (43 tests) |
 | `tests/test_phase9.py` | Phase 9 user management & moderation tests (47 tests) |
+| `tests/test_phase10.py` | Phase 10 tests: feedback, announce, start menu, UX (40 tests) |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline (lint + typecheck + test) |
 | `.env.example` | Environment variable template (including Phase 9 vars) |
 | `Procfile` | Heroku-style process declaration |
 | `railway.toml` | Railway.app deployment config (with health check) |
 | `runtime.txt` | Python version specification |
-| `README.md` | User-facing documentation |
+| `README.md` | Operator documentation (setup, config, deployment, commands) |
 | `IMPROVEMENTS.md` | Code review and improvement plan |
 | `parking_warden_bot_spec.md` | This file (product specification) |
 
 ---
 
-*Last updated: February 2026 (Phase 10 planning — phases renumbered, see IMPROVEMENTS.md)*
+*Last updated: February 2026 (Phase 10 complete — see IMPROVEMENTS.md)*
