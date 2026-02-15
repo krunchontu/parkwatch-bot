@@ -22,24 +22,28 @@ ParkWatch SG is a Telegram bot that crowdsources real-time parking warden sighti
 | `/share` | Generate invite message | Display shareable message |
 | `/help` | Show all commands | Display help text |
 
-## Admin Commands (Phases 8–9)
+## Admin Commands (Phases 8–9, with Phase 10–11 planned)
 
 Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
 
-| Command | Phase | Description |
-|---------|-------|-------------|
-| `/admin` | 8 | List all admin commands |
-| `/admin stats` | 8 | Global statistics dashboard (users, sightings, zones, feedback) |
-| `/admin user <id or @username>` | 8 | User lookup (details, subscriptions, sightings, accuracy, ban status) |
-| `/admin zone <zone_name>` | 8 | Zone lookup (subscribers, sightings, top reporters) |
-| `/admin log [count]` | 8 | View admin action audit log (default: 20, max: 100) |
-| `/admin ban <user_id> [reason]` | 9 | Ban a user (clears subscriptions, notifies user) |
-| `/admin unban <user_id>` | 9 | Remove a user's ban and reset warnings |
-| `/admin banlist` | 9 | List all currently banned users with date and reason |
-| `/admin warn <user_id> [message]` | 9 | Send a warning (auto-ban after MAX_WARNINGS) |
-| `/admin delete <sighting_id> [confirm]` | 9 | Delete a sighting (two-step confirmation) |
-| `/admin review` | 9 | View moderation queue of flagged sightings |
-| `/admin help [command]` | 8 | Detailed help for a specific admin command |
+| Command | Phase | Status | Description |
+|---------|-------|--------|-------------|
+| `/admin` | 8 | Done | List all admin commands |
+| `/admin stats` | 8 | Done | Global statistics dashboard |
+| `/admin user <id or @username>` | 8 | Done | User lookup (details, subscriptions, activity, ban status) |
+| `/admin zone <zone_name>` | 8 | Done | Zone lookup (subscribers, sightings, top reporters) |
+| `/admin log [count]` | 8 | Done | View admin action audit log (default: 20, max: 100) |
+| `/admin ban <user_id> [reason]` | 9 | Done | Ban a user (clears subscriptions, notifies user) |
+| `/admin unban <user_id>` | 9 | Done | Remove a user's ban and reset warnings |
+| `/admin banlist` | 9 | Done | List all currently banned users |
+| `/admin warn <user_id> [message]` | 9 | Done | Send a warning (auto-ban after MAX_WARNINGS) |
+| `/admin delete <sighting_id> [confirm]` | 9 | Done | Delete a sighting (two-step confirmation) |
+| `/admin review` | 9 | Done | View moderation queue of flagged sightings |
+| `/admin help [command]` | 8 | Done | Detailed help for a specific admin command |
+| `/admin announce all <msg>` | 10 | Planned | Announce to all registered users |
+| `/admin announce zone <z> <msg>` | 10 | Planned | Announce to zone subscribers |
+| `/admin maintenance on\|off` | 11 | Planned | Toggle maintenance mode |
+| `/admin config [key] [value]` | 11 | Planned | View/adjust runtime settings |
 
 ---
 
@@ -620,22 +624,27 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] User lookup shows ban status and warning count
 - [x] Alembic migration 003, 47 new tests (217 total)
 
-### Phase 10: Admin — Broadcast & Operations
-- [ ] `/admin broadcast <message>` — send to all users (with confirmation + delivery report)
-- [ ] Targeted broadcast (`zone:<name>`, `region:<name>`)
+### Phase 10: Architecture, UX & Communication
+- [ ] Documentation cleanup (README/spec consolidation)
+- [ ] Refactor `bot/main.py` into modules (`bot/zones.py`, `bot/utils.py`, `bot/handlers/`, `bot/services/`)
+- [ ] `/feedback <message>` — user-to-admin communication channel
+- [ ] `/admin announce all|zone <msg>` — admin-to-user broadcasts
+- [ ] UX discoverability (richer `/start` menu with inline keyboard actions)
+
+### Phase 11: Admin — Operations
 - [ ] `/admin maintenance on|off` — maintenance mode toggle
 - [ ] `/admin purge sightings [days]` and `/admin purge user <id>` (GDPR)
 - [ ] `/admin export stats` — CSV/JSON data export
 - [ ] `/admin config [key] [value]` — view/adjust runtime settings
 
-### Phase 11: Growth Features
+### Phase 12: Growth Features
 - [ ] Leaderboards (weekly/monthly top reporters)
 - [ ] Inline mode (`@parkwatch_bot Orchard` from any chat)
 - [ ] Warden activity heatmaps by time/day
 - [ ] Deep linking for referral tracking
 - [ ] Multi-language support (i18n)
 
-### Phase 12: Monetisation
+### Phase 13: Monetisation
 - [ ] Freemium model (1 zone free, premium for all)
 - [ ] Sponsored alerts from parking providers
 - [ ] Business API for fleet managers
@@ -677,4 +686,4 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 ---
 
-*Last updated: February 2026 (Phase 9)*
+*Last updated: February 2026 (Phase 10 planning — phases renumbered, see IMPROVEMENTS.md)*
