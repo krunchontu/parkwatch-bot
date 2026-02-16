@@ -16,3 +16,5 @@
 
 - Fixed stale `parking_warden_bot_spec.md` heading text from “with Phase 11 planned” to completed Phase 11 wording.
 - Fixed `tests/test_phase11_migration.py` import mechanism to load migration module from filesystem path instead of `alembic.versions` package import, resolving CI collection error.
+- Added runtime-settings fallback-to-default behavior when DB is unavailable/uninitialized, preventing maintenance decorators from breaking unit tests that do not initialize DB.
+- Corrected `tests/test_phase11_data_management.py` to use `ensure_user()` and dict-based `add_sighting()` API.

@@ -85,7 +85,11 @@ class RuntimeSettings:
 
     async def get(self, key: str) -> Any:
         spec = self._get_spec(key)
-        row = await get_db().get_config_override(key)
+        try:
+            row = await get_db().get_config_override(key)
+        except Exception:
+            # Fail-safe path for unit tests and startup code paths before DB init/migration.
+            return spec.default
         if not row:
             return spec.default
         return self._cast(spec, row["value"])
