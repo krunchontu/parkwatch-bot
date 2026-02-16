@@ -45,6 +45,12 @@ Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
 | `/admin announce zone <z> <msg>` | 10 | Done | Announce to zone subscribers |
 | `/admin maintenance on\|off` | 11 | Done | Toggle maintenance mode |
 | `/admin config [key] [value]` | 11 | Done | View/adjust runtime settings |
+| `/admin purge sightings [days]` | 11 | Done | Preview/confirm manual purge of old sightings |
+| `/admin purge sightings zone <z> [days]` | 11 | Done | Preview/confirm zone-scoped sightings purge |
+| `/admin purge user <user_id>` | 11 | Done | Preview/confirm GDPR-style user data purge |
+| `/admin purge confirm` | 11 | Done | Execute pending purge operation |
+| `/admin export stats [csv\|json]` | 11 | Done | Preview non-PII stats export |
+| `/admin export stats [csv\|json] confirm` | 11 | Done | Generate export payload |
 
 ---
 
@@ -696,6 +702,7 @@ The database driver is selected automatically based on `DATABASE_URL`:
 | `alembic/versions/001_initial_schema.py` | Baseline migration matching create_tables() |
 | `alembic/versions/002_admin_actions_table.py` | Phase 8 migration: admin_actions audit log table |
 | `alembic/versions/003_phase9_user_management.py` | Phase 9 migration: banned_users table, flagged/warnings columns |
+| `alembic/versions/004_phase11_config_overrides.py` | Phase 11 migration: runtime config overrides table |
 | `tests/conftest.py` | Shared test fixtures (fresh SQLite DB per test) |
 | `tests/test_unit.py` | Unit tests for pure functions |
 | `tests/test_database.py` | Database integration tests |
