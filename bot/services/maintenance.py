@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import wraps
 
-from telegram import Update
+from telegram import Message, Update
 from telegram.ext import ContextTypes, ConversationHandler
 
 from .runtime_settings import get_runtime_settings
@@ -56,7 +56,7 @@ def maintenance_conversation_check(func):
             cancel_text = f"{msg}\n\nYour active report was cancelled due to maintenance."
             if update.message:
                 await update.message.reply_text(cancel_text)
-            elif update.callback_query and update.callback_query.message:
+            elif update.callback_query and isinstance(update.callback_query.message, Message):
                 await update.callback_query.message.reply_text(cancel_text)
             elif update.callback_query:
                 await update.callback_query.answer(msg, show_alert=True)
