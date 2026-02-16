@@ -61,7 +61,7 @@ You should see:
 
 | Command | Description |
 |---------|-------------|
-| `/start` | Begin onboarding — select zones to subscribe |
+| `/start` | Open quick-action menu (subscribe, report, recent, stats, feedback, help) |
 | `/subscribe` | Add more zones to your subscriptions |
 | `/unsubscribe` | Remove zones from your subscriptions |
 | `/myzones` | View your current subscribed zones |
