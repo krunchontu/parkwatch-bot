@@ -45,3 +45,13 @@
 - Updated `parking_warden_bot_spec.md` Phase 11 admin command statuses (`maintenance`, `config`) from Planned → Done.
 - Updated `/start` onboarding flow in `parking_warden_bot_spec.md` to reflect the current quick-action menu before region/zone selection.
 - Updated spec tech-stack testing row to remove stale hardcoded test count wording.
+
+## 2026-02-16 (Fresh app review pass)
+- Re-refreshed `APP_REVIEW.md` with a tighter good/bad/ugly structure and explicit benchmark framing against world-class Telegram bots.
+- Kept recommendations rewrite-first and focused on highest-ROI improvements (docs truth, feedback contract, fanout hardening, modularity, metrics baseline).
+
+## 2026-02-16 (Docs-only stale metrics + UX wording cleanup)
+- Removed stale hardcoded test-count and pass-rate snapshots from `IMPROVEMENTS.md` while preserving scope descriptions of test coverage.
+- Removed stale hardcoded test counts from `parking_warden_bot_spec.md` test sections and test-file table.
+- Updated `/start` command wording in `parking_warden_bot_spec.md` to reflect current quick-action menu entrypoint.
+- Updated `/start` command wording in `README.md` to reflect quick-action menu behavior.
