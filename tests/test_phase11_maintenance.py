@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from telegram import Message
 from telegram.ext import ConversationHandler
 
 from bot.services.maintenance import maintenance_check, maintenance_conversation_check
@@ -154,7 +155,9 @@ async def test_maintenance_conversation_via_callback_query():
 
     update = MagicMock()
     update.message = None
-    update.callback_query.message.reply_text = AsyncMock()
+    cb_message = MagicMock(spec=Message)
+    cb_message.reply_text = AsyncMock()
+    update.callback_query.message = cb_message
     context = MagicMock()
     context.user_data = {"pending_report_zone": "Bugis"}
 
