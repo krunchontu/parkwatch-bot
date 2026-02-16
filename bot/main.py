@@ -9,6 +9,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ConversationHandler,
+    InlineQueryHandler,
     MessageHandler,
     filters,
 )
@@ -21,7 +22,6 @@ from config import (
     LOG_FORMAT,
     PORT,
     SENTRY_DSN,
-    SIGHTING_RETENTION_DAYS,
     TELEGRAM_BOT_TOKEN,
     WEBHOOK_URL,
 )
@@ -71,7 +71,9 @@ from .handlers.user import (
 )
 from .health import start_health_server, stop_health_server
 from .logging_config import setup_logging
+from .services.maintenance import is_maintenance_enabled
 from .services.moderation import _check_auto_flag, ban_check  # noqa: F401
+from .services.runtime_settings import get_runtime_settings
 from .ui.messages import build_alert_message  # noqa: F401
 from .utils import (  # noqa: F401
     generate_sighting_id,
@@ -110,6 +112,15 @@ async def handle_callback(update: Update, context):
         await handle_feedback(update, context, is_positive=False)
 
 
+async def handle_inline_query(update: Update, context):
+    """Block inline queries during maintenance mode."""
+    if await is_maintenance_enabled():
+        await update.inline_query.answer([], cache_time=0)
+        return
+
+    await update.inline_query.answer([], cache_time=0)
+
+
 async def error_handler(update: object, context):
     """Global error handler — logs the full traceback and notifies the user."""
     logger.error("Unhandled exception:", exc_info=context.error)
@@ -123,7 +134,12 @@ async def error_handler(update: object, context):
 
 async def cleanup_job(context):
     """Scheduled job to clean up old sightings."""
-    deleted = await get_db().cleanup_old_sightings(SIGHTING_RETENTION_DAYS)
+    if await is_maintenance_enabled():
+        logger.info("Skipping cleanup job due to maintenance mode")
+        return
+
+    retention_days = await get_runtime_settings().get("SIGHTING_RETENTION_DAYS")
+    deleted = await get_db().cleanup_old_sightings(retention_days)
     if deleted:
         logger.info(f"Cleaned up {deleted} old sighting(s)")
 
@@ -228,6 +244,7 @@ def main():
     app.add_handler(CommandHandler("admin", admin_command))
 
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(InlineQueryHandler(handle_inline_query))
 
     # Global error handler
     app.add_error_handler(error_handler)

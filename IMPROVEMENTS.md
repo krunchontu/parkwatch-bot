@@ -334,7 +334,7 @@ Operational tools for managing runtime state, data lifecycle, and safe live oper
 
 #### 11.3 Runtime Configuration (must land first)
 
-- [ ] **11.3.1** Add `config_overrides` table via Alembic migration `004_phase11_config_overrides.py`:
+- [x] **11.3.1** Add `config_overrides` table via Alembic migration `004_phase11_config_overrides.py`:
   ```sql
   config_overrides (
     key TEXT PRIMARY KEY,
@@ -343,39 +343,40 @@ Operational tools for managing runtime state, data lifecycle, and safe live oper
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
   )
   ```
-- [ ] **11.3.2** Introduce a typed runtime-settings accessor (single source of truth) so handlers/jobs stop reading module-level constants directly.
-- [ ] **11.3.3** Add strict allowlist for mutable keys (`MAX_REPORTS_PER_HOUR`, `DUPLICATE_WINDOW_MINUTES`, `DUPLICATE_RADIUS_METERS`, `SIGHTING_EXPIRY_MINUTES`, `SIGHTING_RETENTION_DAYS`, `FEEDBACK_WINDOW_HOURS`, `MAX_WARNINGS`, `MAINTENANCE_MODE`, `MAINTENANCE_MESSAGE`).
-- [ ] **11.3.4** Forbid runtime mutation of sensitive/static keys (`TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, `DATABASE_PRIVATE_URL`, `ADMIN_USER_IDS`, webhook ports/URLs).
-- [ ] **11.3.5** `/admin config` and `/admin config <key> <value>` must validate and cast values by key type (int/bool/float/str) and fail-fast on invalid input.
-- [ ] **11.3.6** Audit log must store old value → new value, actor, and timestamp.
-- [ ] **11.3.7** `/admin config reset <key>` removes override and confirms effective default value.
+- [x] **11.3.2** Introduce a typed runtime-settings accessor (single source of truth) so handlers/jobs stop reading module-level constants directly.
+- [x] **11.3.3** Add strict allowlist for mutable keys (`MAX_REPORTS_PER_HOUR`, `DUPLICATE_WINDOW_MINUTES`, `DUPLICATE_RADIUS_METERS`, `SIGHTING_EXPIRY_MINUTES`, `SIGHTING_RETENTION_DAYS`, `FEEDBACK_WINDOW_HOURS`, `MAX_WARNINGS`, `MAINTENANCE_MODE`, `MAINTENANCE_MESSAGE`).
+- [x] **11.3.4** Forbid runtime mutation of sensitive/static keys (`TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, `DATABASE_PRIVATE_URL`, `ADMIN_USER_IDS`, webhook ports/URLs).
+- [x] **11.3.5** `/admin config` and `/admin config <key> <value>` must validate and cast values by key type (int/bool/float/str) and fail-fast on invalid input.
+- [x] **11.3.6** Audit log must store old value → new value, actor, and timestamp.
+- [x] **11.3.7** `/admin config reset <key>` removes override and confirms effective default value. `reset_override()` accepts `actor_id` for audit traceability.
 
 #### 11.1 Maintenance Mode (built on 11.3)
 
-- [ ] **11.1.1** `/admin maintenance on [message]` sets persisted maintenance flag/message in `config_overrides`.
-- [ ] **11.1.2** `/admin maintenance off` clears maintenance override and resumes normal operation.
-- [ ] **11.1.3** Define ConversationHandler behavior explicitly: active `/report` sessions are cancelled with a clear message and cleanup.
-- [ ] **11.1.4** During maintenance, user commands + inline queries are blocked; admin commands remain available.
-- [ ] **11.1.5** Scheduled jobs are soft-paused by flag check inside each job (no scheduler pause API assumption).
-- [ ] **11.1.6** `GET /health` returns degraded maintenance status (`status: "degraded"`, maintenance flag/message).
-- [ ] **11.1.7** `/admin stats` includes maintenance status so all admins can see current mode.
-- [ ] **11.1.8** Optional pre-maintenance broadcast: `/admin maintenance on --announce <msg>` preview + confirm flow.
+- [x] **11.1.1** `/admin maintenance on [message]` sets persisted maintenance flag/message in `config_overrides`.
+- [x] **11.1.2** `/admin maintenance off` clears maintenance override and resumes normal operation.
+- [x] **11.1.3** Define ConversationHandler behavior explicitly: active `/report` sessions are cancelled with a single combined maintenance + cancellation message and cleanup. Safe for `callback_query.message` being `None`.
+- [x] **11.1.4** During maintenance, user commands + inline queries are blocked; admin commands remain available.
+- [x] **11.1.5** Scheduled jobs are soft-paused by flag check inside each job (no scheduler pause API assumption).
+- [x] **11.1.6** `GET /health` returns degraded maintenance status (`status: "degraded"`, maintenance flag/message).
+- [x] **11.1.7** `/admin stats` includes maintenance status so all admins can see current mode.
+- [x] **11.1.8** Optional pre-maintenance broadcast: `/admin maintenance on --announce <msg>` preview + confirm flow.
 
 #### 11.2 Data Management
 
-- [ ] **11.2.1** `/admin purge sightings [days]` (ad-hoc/manual) must be explicitly separate from automated retention cleanup job.
-- [ ] **11.2.2** Add `/admin purge sightings zone <zone_name> [days]` for spam/retirement operations.
-- [ ] **11.2.3** `/admin purge user <user_id>` must remove: user row, subscriptions, sightings, feedback received, feedback given, bans, warnings, and admin-action references where required by policy.
-- [ ] **11.2.4** Purging feedback **given by** a user must recalculate affected sighting counters (`feedback_positive`/`feedback_negative`) transactionally.
-- [ ] **11.2.5** `/admin export stats` defaults to CSV (operator-friendly), optional JSON, and excludes personal data by default.
-- [ ] **11.2.6** Every purge/export command requires preview + explicit confirm.
+- [x] **11.2.1** `/admin purge sightings [days]` (ad-hoc/manual) must be explicitly separate from automated retention cleanup job.
+- [x] **11.2.2** Add `/admin purge sightings zone <zone_name> [days]` for spam/retirement operations.
+- [x] **11.2.3** `/admin purge user <user_id>` must remove: user row, subscriptions, sightings, feedback received, feedback given, bans, warnings, and admin-action references where required by policy. Config overrides are preserved (shared state, not user-owned).
+- [x] **11.2.4** Purging feedback **given by** a user must recalculate affected sighting counters (`feedback_positive`/`feedback_negative`) transactionally.
+- [x] **11.2.5** `/admin export stats` defaults to CSV (operator-friendly), optional JSON, and excludes personal data by default.
+- [x] **11.2.6** Every purge/export command requires preview + explicit confirm.
+- [x] **11.2.7** Zone-scoped purge uses case-insensitive zone matching (consistent with `/admin zone`).
 
 #### 11.4 Testing (required before phase close)
 
-- [ ] **11.4.1** Unit tests for runtime setting casting/validation and allowlist enforcement.
-- [ ] **11.4.2** Integration tests for maintenance gating (commands, report conversation cancellation, inline blocking, job skip behavior).
-- [ ] **11.4.3** Integration tests for purge flows, feedback counter recalculation, and export file generation.
-- [ ] **11.4.4** Migration tests for `004_phase11_config_overrides.py`.
+- [x] **11.4.1** Unit tests for runtime setting casting/validation and allowlist enforcement.
+- [x] **11.4.2** Integration tests for maintenance gating (commands, report conversation cancellation, inline blocking, job skip behavior).
+- [x] **11.4.3** Integration tests for purge flows, feedback counter recalculation, and export file generation.
+- [x] **11.4.4** Migration tests for `004_phase11_config_overrides.py`.
 
 ---
 

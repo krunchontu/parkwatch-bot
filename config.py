@@ -49,5 +49,12 @@ if _admin_ids_raw.strip():
 # Maximum warnings before auto-ban (0 = disable auto-ban escalation)
 MAX_WARNINGS = int(os.getenv("MAX_WARNINGS", "3"))
 
+# --- Phase 11: Runtime Operations ---
+MAINTENANCE_MODE = os.getenv("MAINTENANCE_MODE", "false").lower() in ("true", "1", "yes")
+MAINTENANCE_MESSAGE = os.getenv(
+    "MAINTENANCE_MESSAGE",
+    "ParkWatch SG is temporarily under maintenance. Please try again shortly.",
+)
+
 # Bot version (for health check and Sentry release tracking)
 BOT_VERSION = "1.3.0"

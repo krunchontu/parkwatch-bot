@@ -4,6 +4,8 @@ Supports SQLite (dev) via aiosqlite and PostgreSQL (prod) via asyncpg.
 Selected automatically based on DATABASE_URL scheme.
 """
 
+import csv
+import io
 import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -182,6 +184,13 @@ class Database:
                 reason TEXT,
                 banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
+            """CREATE TABLE IF NOT EXISTS config_overrides (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_by BIGINT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_config_overrides_updated_at ON config_overrides (updated_at)",
         ]
         if self.driver == "postgresql":
             # PostgreSQL uses SERIAL instead of AUTOINCREMENT
@@ -835,6 +844,169 @@ class Database:
     async def reset_warnings(self, user_id: int) -> None:
         """Reset warning count to zero for a user."""
         await self._execute(f"UPDATE users SET warnings = 0 WHERE telegram_id = {self._ph(1)}", (user_id,))
+
+    # --- Phase 11: Runtime configuration ---
+
+    async def get_config_override(self, key: str) -> dict | None:
+        """Get a single runtime config override by key."""
+        return await self._fetchone(
+            f"SELECT key, value, updated_by, updated_at FROM config_overrides WHERE key = {self._ph(1)}",
+            (key,),
+        )
+
+    async def get_all_config_overrides(self) -> list[dict]:
+        """Get all runtime config overrides."""
+        return await self._fetchall("SELECT key, value, updated_by, updated_at FROM config_overrides ORDER BY key")
+
+    async def upsert_config_override(self, key: str, value: str, updated_by: int, updated_at: datetime) -> None:
+        """Insert or update a runtime config override."""
+        if self.driver == "sqlite":
+            await self._execute(
+                "INSERT OR REPLACE INTO config_overrides (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?)",
+                (key, value, updated_by, updated_at),
+            )
+        else:
+            await self._execute(
+                "INSERT INTO config_overrides (key, value, updated_by, updated_at) VALUES ($1, $2, $3, $4) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "
+                "updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at",
+                (key, value, updated_by, updated_at),
+            )
+
+    async def delete_config_override(self, key: str) -> None:
+        """Delete a runtime config override."""
+        await self._execute(f"DELETE FROM config_overrides WHERE key = {self._ph(1)}", (key,))
+
+    # --- Phase 11: Data management ---
+
+    async def purge_sightings_older_than(self, days: int, zone: str | None = None) -> int:
+        """Purge sightings older than days, optionally scoped to zone. Returns deleted count."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        if self.driver == "sqlite":
+            if zone:
+                cursor = await self._conn.execute(
+                    "DELETE FROM sightings WHERE reported_at < ? AND zone = ?",
+                    (cutoff, zone),
+                )
+            else:
+                cursor = await self._conn.execute(
+                    "DELETE FROM sightings WHERE reported_at < ?",
+                    (cutoff,),
+                )
+            count = cursor.rowcount
+            await self._conn.commit()
+            return count
+        else:
+            async with self._pool.acquire() as conn, conn.transaction():
+                if zone:
+                    result = await conn.execute(
+                        "DELETE FROM sightings WHERE reported_at < $1 AND zone = $2",
+                        cutoff,
+                        zone,
+                    )
+                else:
+                    result = await conn.execute(
+                        "DELETE FROM sightings WHERE reported_at < $1",
+                        cutoff,
+                    )
+                try:
+                    return int(result.split()[-1])
+                except (ValueError, IndexError):
+                    return 0
+
+    async def purge_user_data(self, user_id: int) -> dict:
+        """Purge all user-related data and repair affected feedback counters transactionally."""
+        if self.driver == "sqlite":
+            conn = self._conn
+            await conn.execute("BEGIN")
+            try:
+                cursor = await conn.execute("SELECT sighting_id, vote FROM feedback WHERE user_id = ?", (user_id,))
+                given_feedback = await cursor.fetchall()
+
+                for row in given_feedback:
+                    sighting_id = row["sighting_id"]
+                    vote = row["vote"]
+                    if vote == "positive":
+                        await conn.execute(
+                            "UPDATE sightings SET feedback_positive = MAX(0, feedback_positive - 1) WHERE id = ?",
+                            (sighting_id,),
+                        )
+                    else:
+                        await conn.execute(
+                            "UPDATE sightings SET feedback_negative = MAX(0, feedback_negative - 1) WHERE id = ?",
+                            (sighting_id,),
+                        )
+
+                await conn.execute("DELETE FROM feedback WHERE user_id = ?", (user_id,))
+                await conn.execute(
+                    "DELETE FROM feedback WHERE sighting_id IN (SELECT id FROM sightings WHERE reporter_id = ?)",
+                    (user_id,),
+                )
+                await conn.execute("DELETE FROM sightings WHERE reporter_id = ?", (user_id,))
+                await conn.execute("DELETE FROM subscriptions WHERE telegram_id = ?", (user_id,))
+                await conn.execute("DELETE FROM banned_users WHERE telegram_id = ?", (user_id,))
+                await conn.execute("DELETE FROM users WHERE telegram_id = ?", (user_id,))
+                await conn.execute("UPDATE admin_actions SET target = NULL WHERE target = ?", (str(user_id),))
+                await conn.commit()
+                return {"feedback_given_deleted": len(given_feedback)}
+            except Exception:
+                await conn.rollback()
+                raise
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            rows = await conn.fetch("SELECT sighting_id, vote FROM feedback WHERE user_id = $1", user_id)
+            given_feedback = [dict(r) for r in rows]
+
+            for row in given_feedback:
+                if row["vote"] == "positive":
+                    await conn.execute(
+                        "UPDATE sightings SET feedback_positive = GREATEST(0, feedback_positive - 1) WHERE id = $1",
+                        row["sighting_id"],
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE sightings SET feedback_negative = GREATEST(0, feedback_negative - 1) WHERE id = $1",
+                        row["sighting_id"],
+                    )
+
+            await conn.execute("DELETE FROM feedback WHERE user_id = $1", user_id)
+            await conn.execute(
+                "DELETE FROM feedback WHERE sighting_id IN (SELECT id FROM sightings WHERE reporter_id = $1)", user_id
+            )
+            await conn.execute("DELETE FROM sightings WHERE reporter_id = $1", user_id)
+            await conn.execute("DELETE FROM subscriptions WHERE telegram_id = $1", user_id)
+            await conn.execute("DELETE FROM banned_users WHERE telegram_id = $1", user_id)
+            await conn.execute("DELETE FROM users WHERE telegram_id = $1", user_id)
+            await conn.execute("UPDATE admin_actions SET target = NULL WHERE target = $1", str(user_id))
+            return {"feedback_given_deleted": len(given_feedback)}
+
+    async def export_stats(self, format_type: str = "csv") -> str:
+        """Export global stats in CSV (default) or JSON."""
+        stats = await self.get_global_stats()
+        top_sub = await self.get_top_zones_by_subscribers(10)
+        top_sight = await self.get_top_zones_by_sightings(10, days=7)
+
+        payload = {
+            "global_stats": stats,
+            "top_subscribed_zones": top_sub,
+            "top_reported_zones_7d": top_sight,
+        }
+
+        if format_type == "json":
+            import json
+
+            return json.dumps(payload, default=str, indent=2)
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["section", "key", "value"])
+        for key, value in stats.items():
+            writer.writerow(["global_stats", key, value])
+        for item in top_sub:
+            writer.writerow(["top_subscribed_zones", item["zone_name"], item["sub_count"]])
+        for item in top_sight:
+            writer.writerow(["top_reported_zones_7d", item["zone"], item["sighting_count"]])
+        return output.getvalue()
 
     # --- Phase 10: User Feedback Rate Limiting ---
 

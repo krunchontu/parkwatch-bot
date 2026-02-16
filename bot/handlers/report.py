@@ -14,17 +14,11 @@ from telegram import (
 )
 from telegram.ext import ContextTypes, ConversationHandler
 
-from config import (
-    DUPLICATE_RADIUS_METERS,
-    DUPLICATE_WINDOW_MINUTES,
-    FEEDBACK_WINDOW_HOURS,
-    MAX_REPORTS_PER_HOUR,
-    SIGHTING_EXPIRY_MINUTES,
-)
-
 from ..database import get_db
+from ..services.maintenance import maintenance_check, maintenance_conversation_check
 from ..services.moderation import _check_auto_flag, ban_check
 from ..services.notifications import broadcast_alert
+from ..services.runtime_settings import get_runtime_settings
 from ..ui.messages import build_alert_message
 from ..utils import (
     generate_sighting_id,
@@ -42,6 +36,7 @@ CHOOSING_METHOD, SELECTING_REGION, SELECTING_ZONE, AWAITING_LOCATION, AWAITING_D
 
 
 @ban_check
+@maintenance_conversation_check
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /report command."""
     keyboard = [
@@ -58,6 +53,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return CHOOSING_METHOD
 
 
+@maintenance_conversation_check
 async def handle_report_location_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Share Location button - show native GPS keyboard."""
     query = update.callback_query
@@ -81,6 +77,7 @@ async def handle_report_location_button(update: Update, context: ContextTypes.DE
     return AWAITING_LOCATION
 
 
+@maintenance_conversation_check
 async def handle_location_cancel_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle cancel text from reply keyboard during location sharing."""
     context.user_data.pop("pending_report_zone", None)
@@ -92,6 +89,7 @@ async def handle_location_cancel_text(update: Update, context: ContextTypes.DEFA
     return ConversationHandler.END
 
 
+@maintenance_conversation_check
 async def handle_report_manual(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle manual zone selection for report - show regions."""
     query = update.callback_query
@@ -106,6 +104,7 @@ async def handle_report_manual(update: Update, context: ContextTypes.DEFAULT_TYP
     return SELECTING_REGION
 
 
+@maintenance_conversation_check
 async def handle_report_region_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle region selection in report flow - show zones."""
     query = update.callback_query
@@ -129,6 +128,7 @@ async def handle_report_region_selection(update: Update, context: ContextTypes.D
     return SELECTING_ZONE
 
 
+@maintenance_conversation_check
 async def handle_report_back_to_regions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Go back to region selection in report flow."""
     query = update.callback_query
@@ -143,6 +143,7 @@ async def handle_report_back_to_regions(update: Update, context: ContextTypes.DE
     return SELECTING_REGION
 
 
+@maintenance_conversation_check
 async def handle_report_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle zone selection for report."""
     query = update.callback_query
@@ -168,6 +169,7 @@ async def handle_report_zone(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return AWAITING_DESCRIPTION
 
 
+@maintenance_conversation_check
 async def handle_report_skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Skip description and go to confirm."""
     query = update.callback_query
@@ -195,6 +197,7 @@ async def handle_report_skip_description(update: Update, context: ContextTypes.D
     return CONFIRMING
 
 
+@maintenance_conversation_check
 async def handle_description_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text input for description."""
     description = sanitize_description(update.message.text)
@@ -233,6 +236,7 @@ async def handle_description_input(update: Update, context: ContextTypes.DEFAULT
     return CONFIRMING
 
 
+@maintenance_conversation_check
 async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Confirm and broadcast the report."""
     query = update.callback_query
@@ -252,14 +256,15 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     one_hour_ago = now - timedelta(hours=1)
 
     report_count_hour = await db.count_reports_since(user_id, one_hour_ago)
+    max_reports_per_hour = await get_runtime_settings().get("MAX_REPORTS_PER_HOUR")
 
-    if report_count_hour >= MAX_REPORTS_PER_HOUR:
+    if report_count_hour >= max_reports_per_hour:
         oldest = await db.get_oldest_report_since(user_id, one_hour_ago)
         wait_secs = (oldest + timedelta(hours=1) - now).total_seconds() if oldest else 3600
         wait_mins = max(1, int(wait_secs / 60) + 1)
         await query.edit_message_text(
             f"\u26a0\ufe0f Rate limit reached.\n\n"
-            f"You can submit up to {MAX_REPORTS_PER_HOUR} reports per hour.\n"
+            f"You can submit up to {max_reports_per_hour} reports per hour.\n"
             f"Please try again in ~{wait_mins} minute(s)."
         )
         return ConversationHandler.END
@@ -267,7 +272,9 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     # --- Duplicate detection (GPS-aware) ---
     lat = context.user_data.get("pending_report_lat")
     lng = context.user_data.get("pending_report_lng")
-    recent_sightings = await db.find_recent_zone_sightings(zone_name, DUPLICATE_WINDOW_MINUTES)
+    duplicate_window_minutes = await get_runtime_settings().get("DUPLICATE_WINDOW_MINUTES")
+    duplicate_radius_meters = await get_runtime_settings().get("DUPLICATE_RADIUS_METERS")
+    recent_sightings = await db.find_recent_zone_sightings(zone_name, duplicate_window_minutes)
 
     for existing in recent_sightings:
         existing_lat = existing.get("lat")
@@ -276,7 +283,7 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
 
         if has_both_gps:
             dist = haversine_meters(lat, lng, existing_lat, existing_lng)
-            if dist > DUPLICATE_RADIUS_METERS:
+            if dist > duplicate_radius_meters:
                 continue  # Far enough apart — not a duplicate
             # Within radius — duplicate
             mins_ago = int((now - existing["reported_at"]).total_seconds() / 60)
@@ -379,6 +386,7 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END
 
 
+@maintenance_conversation_check
 async def handle_report_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel report via inline button."""
     query = update.callback_query
@@ -430,9 +438,10 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
         if reported_at.tzinfo is None:
             reported_at = reported_at.replace(tzinfo=timezone.utc)
         sighting_age = datetime.now(timezone.utc) - reported_at
-        if sighting_age > timedelta(hours=FEEDBACK_WINDOW_HOURS):
+        feedback_window_hours = await get_runtime_settings().get("FEEDBACK_WINDOW_HOURS")
+        if sighting_age > timedelta(hours=feedback_window_hours):
             await query.answer(
-                f"Feedback window has closed ({FEEDBACK_WINDOW_HOURS}h limit).",
+                f"Feedback window has closed ({feedback_window_hours}h limit).",
                 show_alert=True,
             )
             with contextlib.suppress(Exception):
@@ -497,6 +506,7 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
         logger.error(f"Auto-flag check failed for {sighting_id}: {e}")
 
 
+@maintenance_check
 @ban_check
 async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /recent command."""
@@ -515,7 +525,8 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        relevant = await db.get_recent_sightings_for_zones(user_zones, SIGHTING_EXPIRY_MINUTES)
+        sighting_expiry_minutes = await get_runtime_settings().get("SIGHTING_EXPIRY_MINUTES")
+        relevant = await db.get_recent_sightings_for_zones(user_zones, sighting_expiry_minutes)
     except Exception as e:
         logger.error(f"DB error in /recent (get_recent_sightings): {e}")
         await update.message.reply_text("Sorry, something went wrong fetching recent sightings. Please try again.")
@@ -523,7 +534,7 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not relevant:
         await update.message.reply_text(
-            f"\u2705 No recent warden sightings in your zones (last {SIGHTING_EXPIRY_MINUTES} mins).\n\n"
+            f"\u2705 No recent warden sightings in your zones (last {sighting_expiry_minutes} mins).\n\n"
             f"Your zones: {', '.join(sorted(user_zones))}"
         )
         return
@@ -574,6 +585,7 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 
+@maintenance_conversation_check
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle shared location for report."""
     location = update.message.location

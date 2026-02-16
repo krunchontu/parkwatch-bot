@@ -23,7 +23,7 @@ ParkWatch SG is a Telegram bot that crowdsources real-time parking warden sighti
 | `/feedback <message>` | Send feedback to admins | Relay message, confirm to user |
 | `/help` | Show all commands | Display help text |
 
-## Admin Commands (Phases 8–10, with Phase 11 planned)
+## Admin Commands (Phases 8–11, including completed Phase 11 operations)
 
 Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
 
@@ -633,10 +633,10 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] UX discoverability (richer `/start` menu with inline keyboard actions)
 
 ### Phase 11: Admin — Operations (Dependency-ordered)
-- [ ] **11.3 Runtime config first**: `config_overrides` + typed runtime setting accessor + allowlist/validation + audit old→new values
-- [ ] **11.1 Maintenance mode second**: persisted flag, report-conversation cancellation strategy, inline/query blocking, health degraded status, job soft-pause checks
-- [ ] **11.2 Data management third**: purge sightings (manual vs scheduled distinction), purge by zone, GDPR-complete user purge (including feedback given + recompute counters), CSV-first export
-- [ ] Add explicit Phase 11 test plan before closure
+- [x] **11.3 Runtime config first**: `config_overrides` + typed runtime setting accessor + allowlist/validation + audit old→new values
+- [x] **11.1 Maintenance mode second**: persisted flag, report-conversation cancellation strategy, inline/query blocking, health degraded status, job soft-pause checks
+- [x] **11.2 Data management third**: purge sightings (manual vs scheduled distinction), purge by zone, GDPR-complete user purge (including feedback given + recompute counters), CSV-first export
+- [x] Add explicit Phase 11 test plan before closure
 
 ### Phase 12: Growth Features (Re-scoped and prioritized)
 - [ ] 12.4 Deep linking/referrals first (schema + dedupe + GDPR cleanup integration)
