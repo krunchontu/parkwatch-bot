@@ -78,14 +78,3 @@ Next Steps:
 2. Keep spec command wording synced with handler UX changes.
 Blockers:
 - None for docs-only scope.
-
-[UPDATE]
-Phase: 2.4
-Completed:
-- Performed thorough docs-vs-code discrepancy pass beyond the prior fixes.
-- Corrected remaining docs drift in README/spec/improvements/review (Phase 11 command matrix completeness, migration inventory, service inventory, and status wording accuracy).
-Next Steps:
-1. Add a lightweight docs QA checklist in CI (e.g., command/migration inventory consistency).
-2. Keep APP_REVIEW findings synchronized with resolved documentation issues.
-Blockers:
-- None for docs-only scope.

@@ -26,13 +26,16 @@ ParkWatch is a practical utility bot with solid fundamentals: clear command mode
 
 ## Where docs and code drift (The Bad)
 
-1. **Historical docs drift required cleanup.**
-   - Hardcoded quality metrics and stale flow wording were previously present; keep docs tied to durable descriptions or CI-derived outputs.
+1. **Hardcoded quality metrics in docs are stale.**
+   - `IMPROVEMENTS.md` still claims very high legacy test counts and “100% pass rate” snapshots that are not durable documentation.
 
-2. **Feedback acknowledgment can over-promise.**
+2. **Spec and runtime UX wording diverged over time.**
+   - `/start` and menu-led paths evolved, while parts of the spec remain phase-centric and partially historical.
+
+3. **Feedback acknowledgment can over-promise.**
    - User receives success wording even if no admin destination is configured or all sends fail.
 
-3. **Docs are feature-rich but still light on ops-truth contracts.**
+4. **Docs are feature-rich but not ops-truthful.**
    - Reliability SLOs, expected send latency, and failure-budget style commitments are not documented.
 
 ---
