@@ -666,7 +666,6 @@ async def _admin_warn(update: Update, context: ContextTypes.DEFAULT_TYPE, args: 
         notified = False
 
     # Check auto-ban escalation
-    max_warnings = await get_runtime_settings().get("MAX_WARNINGS")
     if max_warnings > 0 and new_count >= max_warnings:
         await db.ban_user(target_id, admin_id, reason=f"Auto-ban: {new_count} warnings reached")
         await db.log_admin_action(
@@ -976,7 +975,7 @@ async def _admin_config(update: Update, context: ContextTypes.DEFAULT_TYPE, args
         key = parts[1].strip().upper()
         try:
             old_value = await settings.get(key)
-            default_value = await settings.reset_override(key)
+            default_value = await settings.reset_override(key, actor_id=admin_id)
         except RuntimeSettingsError as exc:
             await update.message.reply_text(str(exc))
             return
@@ -1112,6 +1111,21 @@ async def _admin_purge(update: Update, context: ContextTypes.DEFAULT_TYPE, args:
                 await update.message.reply_text("Usage: /admin purge sightings zone <zone_name> [days]")
                 return
             zone = parts[2]
+            # Case-insensitive zone matching
+            zone_found = False
+            for region in ZONES.values():
+                for z in region["zones"]:
+                    if z.lower() == zone.lower():
+                        zone = z
+                        zone_found = True
+                        break
+                if zone_found:
+                    break
+            if not zone_found:
+                await update.message.reply_text(
+                    f"Zone not found: {zone}\n\nUse exact zone names (e.g., 'Tanjong Pagar', 'Bugis')."
+                )
+                return
             if len(parts) >= 4 and parts[3].isdigit():
                 days = int(parts[3])
         elif len(parts) >= 2 and parts[1].isdigit():

@@ -52,11 +52,14 @@ def maintenance_conversation_check(func):
             context.user_data.pop("pending_report_lat", None)
             context.user_data.pop("pending_report_lng", None)
             context.user_data.pop("report_region", None)
-            await _reply_maintenance(update, context)
+            msg = await maintenance_message()
+            cancel_text = f"{msg}\n\nYour active report was cancelled due to maintenance."
             if update.message:
-                await update.message.reply_text("Your active report was cancelled due to maintenance.")
+                await update.message.reply_text(cancel_text)
+            elif update.callback_query and update.callback_query.message:
+                await update.callback_query.message.reply_text(cancel_text)
             elif update.callback_query:
-                await update.callback_query.message.reply_text("Your active report was cancelled due to maintenance.")
+                await update.callback_query.answer(msg, show_alert=True)
             return ConversationHandler.END
         return await func(update, context)
 
