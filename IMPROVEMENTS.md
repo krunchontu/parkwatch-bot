@@ -8,9 +8,9 @@
 
 ---
 
-## Status: Phases 1–10 Complete
+## Status: Phases 1–11 Complete
 
-Phases 1 through 10 addressed all critical bugs, UX issues, data persistence, robustness gaps, known code defects, established automated testing and CI, hardened the bot for production deployment, added admin foundation with visibility tools, implemented user management with content moderation, and completed architecture refactoring with user-admin communication channels. All items below are checked off and verified in the current codebase.
+Phases 1 through 11 addressed critical bugs, UX issues, data persistence, robustness gaps, automated testing/CI, production infrastructure, admin visibility and moderation, architecture refactoring, and runtime operations (maintenance/config/purge/export). Completed items below are checked off and verified in the current codebase.
 
 ### Phase 1: Critical Fixes (Code-Doc Alignment & Stability) ✅
 
@@ -61,11 +61,11 @@ Phases 1 through 10 addressed all critical bugs, UX issues, data persistence, ro
 8. **Config externalization** — All tunable values in `config.py` with env var overrides
 9. **Timezone-safe datetime** — All `datetime.now(timezone.utc)` throughout codebase
 10. **Proper Python packaging** — Runs as `python -m bot.main`, relative imports, no sys.path hacks
-11. **Test coverage** — 257 tests (48 unit + 57 integration + 22 infrastructure + 43 admin + 47 moderation + 40 Phase 10) with 100% pass rate
+11. **Test coverage** — Comprehensive automated coverage across unit, database integration, infrastructure, admin, moderation, and UX flows (validated in CI)
 12. **CI pipeline** — Automated lint, type check, and test on every push/PR via GitHub Actions
 13. **Code quality** — All ruff lint and format checks pass, mypy type checking clean
 14. **Production infrastructure** — Webhook mode, health check endpoint, structured JSON logging, Alembic migrations, Sentry integration
-15. **Admin foundation** — Authentication layer, global stats dashboard, user/zone lookup, audit logging with full test coverage
+15. **Admin foundation** — Authentication layer, global stats dashboard, user/zone lookup, audit logging with comprehensive automated test coverage
 16. **User management** — Ban/unban, moderation queue, warning system with auto-ban escalation, ban enforcement middleware
 
 ---
@@ -90,8 +90,8 @@ All 10 known issues from the Phase 1–4 review have been fixed.
 Automated test suite and CI pipeline to maintain code quality and prevent regressions.
 
 - [x] **6.1** Set up pytest with `pytest-asyncio` (`asyncio_mode = "auto"`) for async test support
-- [x] **6.2** Unit tests for pure functions: `haversine_meters` (6 tests), `get_reporter_badge` (8 tests), `get_accuracy_indicator` (7 tests), `sanitize_description` (11 tests), `build_alert_message` (8 tests), `generate_sighting_id` (3 tests), plus zone data integrity checks (5 tests) — **48 unit tests total**
-- [x] **6.3** Database integration tests: subscriptions (8), users (5), sightings (5), recent/duplicate detection (7), rate limiting (4), feedback (9), accuracy (7), cleanup (4), feedback counts (2), driver init (6) — **57 integration tests total**
+- [x] **6.2** Unit tests for pure functions: `haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `sanitize_description`, `build_alert_message`, `generate_sighting_id`, plus zone data integrity checks
+- [x] **6.3** Database integration tests: subscriptions, users, sightings, recent/duplicate detection, rate limiting, feedback, accuracy, cleanup, feedback counts, driver initialization
 - [x] **6.4** GitHub Actions CI pipeline (`.github/workflows/ci.yml`): lint (ruff check + format), type check (mypy), test (pytest across Python 3.10/3.11/3.12)
 - [x] **6.5** `pyproject.toml` for proper packaging — project metadata, dependencies, `[project.optional-dependencies] dev`, tool configs for pytest/ruff/mypy
 - [x] **6.6** Lint fixes applied: import sorting (isort), unused variables removed, f-string cleanup, `contextlib.suppress` for try-except-pass patterns, PEP 8 naming compliance
@@ -105,7 +105,7 @@ Harden deployment, observability, and schema management for real-world scale. Se
 - [x] **7.3** Structured logging (JSON format) — `bot/logging_config.py` with `JSONFormatter` producing single-line JSON with timestamp, level, logger name, message, and optional exception/context fields; toggle via `LOG_FORMAT=json` env var; text mode preserved as default for development; noisy third-party loggers suppressed
 - [x] **7.4** Database migrations with Alembic — `alembic.ini`, `alembic/env.py`, migration template, and initial baseline migration (`001_initial_schema.py`) matching existing `create_tables()` schema; reads `DATABASE_URL` from `config.py`; supports both SQLite and PostgreSQL; `create_tables()` retained as fallback for zero-migration bootstrapping
 - [x] **7.5** Sentry error tracking — graceful init via `_init_sentry()` in `main()`; reads `SENTRY_DSN` from env; sets release tag to bot version, traces_sample_rate=0.1, environment auto-detected from webhook/polling mode; `sentry-sdk` is an optional dependency (`pip install ".[sentry]"`); missing SDK produces a warning, not a crash
-- [x] **7.6** Test coverage for all Phase 7 features — 22 new tests: health check server lifecycle (5 tests), JSON formatter (5 tests), setup_logging (4 tests), config validation (6 tests), Sentry init (2 tests) — **127 total tests**
+- [x] **7.6** Test coverage for all Phase 7 features — health check server lifecycle, JSON formatter, setup_logging, config validation, and Sentry initialization
 
 ---
 
@@ -172,7 +172,7 @@ Establish the admin authentication layer, provide global visibility into bot act
 
 #### 8.6 Testing
 
-- [x] **8.6.1** 43 new tests in `tests/test_phase8.py`: config parsing (6 tests), admin_only decorator (2 tests), audit log DB operations (7 tests), global stats queries (6 tests), user lookup DB methods (9 tests), zone lookup DB methods (6 tests), admin_actions schema (3 tests), admin help constants (2 tests), zone validation (2 tests) — **170 total tests**
+- [x] **8.6.1** Expanded tests in `tests/test_phase8.py`: config parsing, admin-only guard, audit log DB operations, global stats queries, user/zone lookup DB methods, admin_actions schema validation, help constants, and zone validation
 
 ---
 
@@ -244,7 +244,7 @@ Give admins the ability to remove bad actors and false content. Critical for pla
 
 #### 9.4 Testing
 
-- [x] **9.4.1** 47 new tests in `tests/test_phase9.py`: ban operations (10 tests), sighting moderation (8 tests), low-accuracy reporters (4 tests), warnings (5 tests), schema validation (4 tests), config (3 tests), ban_check decorator (2 tests), auto-flag logic (4 tests), help text (2 tests), ban integration (3 tests), warning escalation (2 tests) — **217 total tests**
+- [x] **9.4.1** Expanded tests in `tests/test_phase9.py`: ban operations, sighting moderation, low-accuracy reporter logic, warning flows, schema/config validation, `ban_check` behavior, auto-flag logic, and escalation paths
 
 ---
 
@@ -546,12 +546,12 @@ Quick reference for all admin commands once fully implemented.
 | `alembic/versions/002_admin_actions_table.py` | ~40 | Phase 8 migration: admin_actions audit log table |
 | `alembic/versions/003_phase9_user_management.py` | ~45 | Phase 9 migration: banned_users table, flagged/warnings columns |
 | `tests/conftest.py` | ~25 | Shared test fixtures (fresh SQLite DB per test) |
-| `tests/test_unit.py` | ~340 | Unit tests for pure functions and zone data integrity (48 tests) |
-| `tests/test_database.py` | ~600 | Database integration tests (CRUD, queries, transactions) (57 tests) |
-| `tests/test_phase7.py` | ~290 | Phase 7 tests: health check, logging, config, Sentry (22 tests) |
-| `tests/test_phase8.py` | ~630 | Phase 8 tests: admin auth, stats, lookup, audit log (43 tests) |
-| `tests/test_phase9.py` | ~800 | Phase 9 tests: banning, moderation, warnings, auto-flag, escalation (47 tests) |
-| `tests/test_phase10.py` | ~680 | Phase 10 tests: feedback, announce, start menu, UX (40 tests) |
+| `tests/test_unit.py` | ~340 | Unit tests for pure functions and zone data integrity |
+| `tests/test_database.py` | ~600 | Database integration tests (CRUD, queries, transactions) |
+| `tests/test_phase7.py` | ~290 | Phase 7 tests: health check, logging, config, Sentry |
+| `tests/test_phase8.py` | ~630 | Phase 8 tests: admin auth, stats, lookup, audit log |
+| `tests/test_phase9.py` | ~800 | Phase 9 tests: banning, moderation, warnings, auto-flag, escalation |
+| `tests/test_phase10.py` | ~680 | Phase 10 tests: feedback, announce, start menu, UX |
 | `.github/workflows/ci.yml` | ~45 | GitHub Actions CI pipeline (lint + typecheck + test) |
 | `parking_warden_bot_spec.md` | ~700 | Full product specification (user flows, message formats, reputation, zones) |
 | `README.md` | ~300 | Operator documentation (setup, config, deployment, commands) |

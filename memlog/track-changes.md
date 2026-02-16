@@ -45,3 +45,21 @@
 - Updated `parking_warden_bot_spec.md` Phase 11 admin command statuses (`maintenance`, `config`) from Planned → Done.
 - Updated `/start` onboarding flow in `parking_warden_bot_spec.md` to reflect the current quick-action menu before region/zone selection.
 - Updated spec tech-stack testing row to remove stale hardcoded test count wording.
+
+## 2026-02-16 (Fresh app review pass)
+- Re-refreshed `APP_REVIEW.md` with a tighter good/bad/ugly structure and explicit benchmark framing against world-class Telegram bots.
+- Kept recommendations rewrite-first and focused on highest-ROI improvements (docs truth, feedback contract, fanout hardening, modularity, metrics baseline).
+
+## 2026-02-16 (Docs-only stale metrics + UX wording cleanup)
+- Removed stale hardcoded test-count and pass-rate snapshots from `IMPROVEMENTS.md` while preserving scope descriptions of test coverage.
+- Removed stale hardcoded test counts from `parking_warden_bot_spec.md` test sections and test-file table.
+- Updated `/start` command wording in `parking_warden_bot_spec.md` to reflect current quick-action menu entrypoint.
+- Updated `/start` command wording in `README.md` to reflect quick-action menu behavior.
+
+## 2026-02-16 (Thorough docs discrepancy pass)
+- Re-audited docs against current handlers/services and fixed additional documentation drift.
+- Updated `parking_warden_bot_spec.md` admin command matrix to include implemented Phase 11 purge/export commands.
+- Updated `parking_warden_bot_spec.md` file inventory to include Alembic migration `004_phase11_config_overrides.py`.
+- Updated `README.md` project structure to include `maintenance.py` and `runtime_settings.py` services and corrected Alembic migration count (4).
+- Updated `IMPROVEMENTS.md` status heading/body to reflect completed Phase 11 state.
+- Updated `APP_REVIEW.md` wording to avoid stale claims after docs cleanup and frame drift as historical/ongoing governance risk.

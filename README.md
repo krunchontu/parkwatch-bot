@@ -61,7 +61,7 @@ You should see:
 
 | Command | Description |
 |---------|-------------|
-| `/start` | Begin onboarding — select zones to subscribe |
+| `/start` | Open quick-action menu (subscribe, report, recent, stats, feedback, help) |
 | `/subscribe` | Add more zones to your subscriptions |
 | `/unsubscribe` | Remove zones from your subscriptions |
 | `/myzones` | View your current subscribed zones |
@@ -159,14 +159,16 @@ parkwatch-bot/
 │   │   └── admin.py             # Admin commands (/admin router + subcommands)
 │   ├── services/
 │   │   ├── notifications.py     # Alert broadcast with blocked-user cleanup
-│   │   └── moderation.py        # ban_check decorator, auto-flag logic
+│   │   ├── moderation.py        # ban_check decorator, auto-flag logic
+│   │   ├── maintenance.py       # Maintenance-mode gating utilities
+│   │   └── runtime_settings.py  # DB-backed runtime config access
 │   ├── ui/
 │   │   ├── keyboards.py         # Keyboard builders (zone selection, menus)
 │   │   └── messages.py          # Message builders (alert formatting)
 │   ├── health.py                # Health check HTTP server (GET /health)
 │   └── logging_config.py        # Structured logging (text/JSON modes)
 ├── tests/                       # pytest suite (unit, integration, infrastructure, admin, moderation, UX)
-├── alembic/                     # Database migration scripts (3 migrations)
+├── alembic/                     # Database migration scripts (4 migrations)
 ├── config.py                    # Environment configuration
 ├── pyproject.toml               # Project metadata, deps, tool configs
 ├── requirements.txt             # Runtime dependencies

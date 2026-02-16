@@ -57,3 +57,35 @@ Next Steps:
 2. (Optional) implement truthful `/feedback` delivery acknowledgements as previously identified.
 Blockers:
 - No new blockers introduced for this docs-only patch.
+
+[UPDATE]
+Phase: 2.2
+Completed:
+- Completed another judicious documentation-to-code review pass and refreshed `APP_REVIEW.md` with current Good/Bad/Ugly analysis plus world-class Telegram bot benchmark positioning.
+Next Steps:
+1. Convert review recommendations into a ranked implementation backlog with effort/impact estimates.
+2. Execute fanout reliability hardening before feature expansion.
+Blockers:
+- None for documentation/review deliverable.
+
+[UPDATE]
+Phase: 2.3
+Completed:
+- Applied docs-only fixes requested: removed stale hardcoded test metrics/pass-rate snapshots and aligned `/start` wording to current menu-first UX in README/spec.
+- Performed an additional pass for related documentation-only drift in the same scope (test-count wording in spec test summary/table).
+Next Steps:
+1. Optionally replace any future numeric quality claims with CI-linked/generated metrics.
+2. Keep spec command wording synced with handler UX changes.
+Blockers:
+- None for docs-only scope.
+
+[UPDATE]
+Phase: 2.4
+Completed:
+- Performed thorough docs-vs-code discrepancy pass beyond the prior fixes.
+- Corrected remaining docs drift in README/spec/improvements/review (Phase 11 command matrix completeness, migration inventory, service inventory, and status wording accuracy).
+Next Steps:
+1. Add a lightweight docs QA checklist in CI (e.g., command/migration inventory consistency).
+2. Keep APP_REVIEW findings synchronized with resolved documentation issues.
+Blockers:
+- None for docs-only scope.

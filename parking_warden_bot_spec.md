@@ -12,7 +12,7 @@ ParkWatch SG is a Telegram bot that crowdsources real-time parking warden sighti
 
 | Command | Description | Flow |
 |---------|-------------|------|
-| `/start` | Onboarding — register and select zones | Region → Zone selection |
+| `/start` | Onboarding entrypoint with quick-action menu | Menu → region/zone selection (when subscribing) |
 | `/subscribe` | Add more zones to subscriptions | Region → Zone selection |
 | `/unsubscribe` | Remove zones from subscriptions | Zone list → Tap to remove |
 | `/myzones` | View current subscribed zones | Display list |
@@ -45,6 +45,12 @@ Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
 | `/admin announce zone <z> <msg>` | 10 | Done | Announce to zone subscribers |
 | `/admin maintenance on\|off` | 11 | Done | Toggle maintenance mode |
 | `/admin config [key] [value]` | 11 | Done | View/adjust runtime settings |
+| `/admin purge sightings [days]` | 11 | Done | Preview/confirm manual purge of old sightings |
+| `/admin purge sightings zone <z> [days]` | 11 | Done | Preview/confirm zone-scoped sightings purge |
+| `/admin purge user <user_id>` | 11 | Done | Preview/confirm GDPR-style user data purge |
+| `/admin purge confirm` | 11 | Done | Execute pending purge operation |
+| `/admin export stats [csv\|json]` | 11 | Done | Preview non-PII stats export |
+| `/admin export stats [csv\|json] confirm` | 11 | Done | Generate export payload |
 
 ---
 
@@ -603,9 +609,9 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 ### Phase 6: Testing & CI ✅
 - [x] `pyproject.toml` for packaging and tool configs (pytest, ruff, mypy)
-- [x] pytest + pytest-asyncio test suite (105 tests, async auto mode)
-- [x] Unit tests for pure functions (48 tests): `haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `sanitize_description`, `build_alert_message`, `generate_sighting_id`, zone data integrity
-- [x] Database integration tests (57 tests): subscriptions, users, sightings, duplicate detection, rate limiting, feedback, accuracy, cleanup, driver detection
+- [x] pytest + pytest-asyncio test suite (async auto mode)
+- [x] Unit tests for pure functions: `haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `sanitize_description`, `build_alert_message`, `generate_sighting_id`, zone data integrity
+- [x] Database integration tests: subscriptions, users, sightings, duplicate detection, rate limiting, feedback, accuracy, cleanup, driver detection
 - [x] GitHub Actions CI pipeline: ruff lint/format, mypy type check, pytest across Python 3.10/3.11/3.12
 - [x] Codebase lint cleanup: import sorting, unused variables, `contextlib.suppress` patterns
 
@@ -615,7 +621,7 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] Structured logging (JSON via `LOG_FORMAT=json`, text default)
 - [x] Database migrations (Alembic with initial baseline migration)
 - [x] Error tracking (Sentry, optional `sentry-sdk` dependency)
-- [x] 22 new tests for Phase 7 features (127 total)
+- [x] Phase 7 test coverage for health checks, logging, config, and Sentry
 
 ### Phase 8: Admin — Foundation & Visibility ✅
 - [x] Admin authentication (`ADMIN_USER_IDS` env var, `admin_only` decorator — generic rejection for non-admins)
@@ -624,7 +630,7 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] `/admin user <id or @username>` — user lookup (details, badge, accuracy, subscriptions, recent sightings)
 - [x] `/admin zone <name>` — zone lookup (subscribers, sighting volume, top reporters, recent sightings)
 - [x] Audit logging (`admin_actions` table, Alembic migration 002, `/admin log [count]`)
-- [x] 43 new tests for all Phase 8 features (170 total)
+- [x] Phase 8 test coverage for admin authentication, stats, lookups, and audit logging
 
 ### Phase 9: Admin — User Management & Moderation ✅
 - [x] `/admin ban <id> [reason]`, `/admin unban <id>`, `/admin banlist`
@@ -634,7 +640,7 @@ The database driver is selected automatically based on `DATABASE_URL`:
 - [x] Auto-flag logic (sightings auto-flagged when >70% negative feedback, 3+ votes)
 - [x] `/admin warn <id> [message]` — warning system with configurable auto-ban (MAX_WARNINGS=3)
 - [x] User lookup shows ban status and warning count
-- [x] Alembic migration 003, 47 new tests (217 total)
+- [x] Alembic migration 003 with Phase 9 moderation/banning test coverage
 
 ### Phase 10: Architecture, UX & Communication ✅
 - [x] Documentation cleanup (README/spec consolidation)
@@ -696,13 +702,14 @@ The database driver is selected automatically based on `DATABASE_URL`:
 | `alembic/versions/001_initial_schema.py` | Baseline migration matching create_tables() |
 | `alembic/versions/002_admin_actions_table.py` | Phase 8 migration: admin_actions audit log table |
 | `alembic/versions/003_phase9_user_management.py` | Phase 9 migration: banned_users table, flagged/warnings columns |
+| `alembic/versions/004_phase11_config_overrides.py` | Phase 11 migration: runtime config overrides table |
 | `tests/conftest.py` | Shared test fixtures (fresh SQLite DB per test) |
-| `tests/test_unit.py` | Unit tests for pure functions (48 tests) |
-| `tests/test_database.py` | Database integration tests (57 tests) |
-| `tests/test_phase7.py` | Phase 7 infrastructure tests (22 tests) |
-| `tests/test_phase8.py` | Phase 8 admin foundation tests (43 tests) |
-| `tests/test_phase9.py` | Phase 9 user management & moderation tests (47 tests) |
-| `tests/test_phase10.py` | Phase 10 tests: feedback, announce, start menu, UX (40 tests) |
+| `tests/test_unit.py` | Unit tests for pure functions |
+| `tests/test_database.py` | Database integration tests |
+| `tests/test_phase7.py` | Phase 7 infrastructure tests |
+| `tests/test_phase8.py` | Phase 8 admin foundation tests |
+| `tests/test_phase9.py` | Phase 9 user management & moderation tests |
+| `tests/test_phase10.py` | Phase 10 tests: feedback, announce, start menu, UX |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline (lint + typecheck + test) |
 | `.env.example` | Environment variable template (including Phase 9 vars) |
 | `Procfile` | Heroku-style process declaration |
