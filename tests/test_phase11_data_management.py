@@ -1,8 +1,11 @@
 """Phase 11 data management tests."""
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from bot.handlers.admin import _admin_purge
 
 
 @pytest.mark.asyncio
@@ -79,3 +82,19 @@ async def test_export_stats_csv_json(db):
 
     assert "section,key,value" in csv_data
     assert "global_stats" in json_data
+
+
+@pytest.mark.asyncio
+async def test_admin_purge_zone_parses_multiword_zone_name(db):
+    update = MagicMock()
+    update.effective_user.id = 999
+    update.message.reply_text = AsyncMock()
+
+    context = MagicMock()
+    context.user_data = {}
+
+    with patch("bot.handlers.admin.get_db", return_value=db):
+        await _admin_purge(update, context, "sightings zone Marina Bay 14")
+
+    assert context.user_data["pending_purge"] == {"type": "sightings", "zone": "Marina Bay", "days": 14}
+    update.message.reply_text.assert_called_once()

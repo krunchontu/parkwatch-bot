@@ -1111,11 +1111,38 @@ async def _admin_purge(update: Update, context: ContextTypes.DEFAULT_TYPE, args:
             if len(parts) < 3:
                 await update.message.reply_text("Usage: /admin purge sightings zone <zone_name> [days]")
                 return
-            zone = parts[2]
-            if len(parts) >= 4 and parts[3].isdigit():
-                days = int(parts[3])
+
+            remainder = args.split("zone", maxsplit=1)[1].strip()
+            lowered = remainder.lower()
+            resolved_zone = None
+
+            for region in ZONES.values():
+                for z in region["zones"]:
+                    z_lower = z.lower()
+                    if lowered == z_lower or lowered.startswith(f"{z_lower} "):
+                        resolved_zone = z
+                        trailing = remainder[len(z) :].strip()
+                        if trailing:
+                            if not trailing.isdigit():
+                                await update.message.reply_text("Days must be a positive integer.")
+                                return
+                            days = int(trailing)
+                        break
+                if resolved_zone:
+                    break
+
+            if not resolved_zone:
+                await update.message.reply_text(
+                    "Unknown zone. Use an exact zone name, e.g. /admin purge sightings zone Marina Bay 30"
+                )
+                return
+
+            zone = resolved_zone
         elif len(parts) >= 2 and parts[1].isdigit():
             days = int(parts[1])
+        elif len(parts) >= 2:
+            await update.message.reply_text("Days must be a positive integer.")
+            return
 
         context.user_data["pending_purge"] = {"type": "sightings", "zone": zone, "days": days}
         scope = f"zone={zone}" if zone else "all zones"

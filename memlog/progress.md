@@ -21,3 +21,12 @@ Next Steps:
 1. Validate behavior in staging Telegram environment for admin command UX and long-message export rendering.
 2. If accepted, proceed to prioritized Phase 12 sequence.
 3. Keep runtime setting allowlist synchronized with future mutable config additions.
+
+[UPDATE]
+Phase: 1.9
+Completed:
+- Performed targeted Phase 11 review and found/fixed a parsing bug in admin purge command for multi-word zone names.
+- Added regression test coverage for zone-name parsing in purge command flow.
+Next Steps:
+1. Run full pytest suite in an environment with `pytest-asyncio` available.
+2. Validate `/admin purge` command UX in staging Telegram environment.
