@@ -882,22 +882,37 @@ class Database:
     async def purge_sightings_older_than(self, days: int, zone: str | None = None) -> int:
         """Purge sightings older than days, optionally scoped to zone. Returns deleted count."""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        if zone:
-            row = await self._fetchone(
-                f"SELECT COUNT(*) AS cnt FROM sightings WHERE reported_at < {self._ph(1)} AND zone = {self._ph(2)}",
-                (cutoff, zone),
-            )
-            await self._execute(
-                f"DELETE FROM sightings WHERE reported_at < {self._ph(1)} AND zone = {self._ph(2)}",
-                (cutoff, zone),
-            )
+        if self.driver == "sqlite":
+            if zone:
+                cursor = await self._conn.execute(
+                    "DELETE FROM sightings WHERE reported_at < ? AND zone = ?",
+                    (cutoff, zone),
+                )
+            else:
+                cursor = await self._conn.execute(
+                    "DELETE FROM sightings WHERE reported_at < ?",
+                    (cutoff,),
+                )
+            count = cursor.rowcount
+            await self._conn.commit()
+            return count
         else:
-            row = await self._fetchone(
-                f"SELECT COUNT(*) AS cnt FROM sightings WHERE reported_at < {self._ph(1)}",
-                (cutoff,),
-            )
-            await self._execute(f"DELETE FROM sightings WHERE reported_at < {self._ph(1)}", (cutoff,))
-        return row["cnt"] if row else 0
+            async with self._pool.acquire() as conn, conn.transaction():
+                if zone:
+                    result = await conn.execute(
+                        "DELETE FROM sightings WHERE reported_at < $1 AND zone = $2",
+                        cutoff,
+                        zone,
+                    )
+                else:
+                    result = await conn.execute(
+                        "DELETE FROM sightings WHERE reported_at < $1",
+                        cutoff,
+                    )
+                try:
+                    return int(result.split()[-1])
+                except (ValueError, IndexError):
+                    return 0
 
     async def purge_user_data(self, user_id: int) -> dict:
         """Purge all user-related data and repair affected feedback counters transactionally."""
@@ -930,7 +945,6 @@ class Database:
                 await conn.execute("DELETE FROM sightings WHERE reporter_id = ?", (user_id,))
                 await conn.execute("DELETE FROM subscriptions WHERE telegram_id = ?", (user_id,))
                 await conn.execute("DELETE FROM banned_users WHERE telegram_id = ?", (user_id,))
-                await conn.execute("DELETE FROM config_overrides WHERE updated_by = ?", (user_id,))
                 await conn.execute("DELETE FROM users WHERE telegram_id = ?", (user_id,))
                 await conn.execute("UPDATE admin_actions SET target = NULL WHERE target = ?", (str(user_id),))
                 await conn.commit()
@@ -962,7 +976,6 @@ class Database:
             await conn.execute("DELETE FROM sightings WHERE reporter_id = $1", user_id)
             await conn.execute("DELETE FROM subscriptions WHERE telegram_id = $1", user_id)
             await conn.execute("DELETE FROM banned_users WHERE telegram_id = $1", user_id)
-            await conn.execute("DELETE FROM config_overrides WHERE updated_by = $1", user_id)
             await conn.execute("DELETE FROM users WHERE telegram_id = $1", user_id)
             await conn.execute("UPDATE admin_actions SET target = NULL WHERE target = $1", str(user_id))
             return {"feedback_given_deleted": len(given_feedback)}

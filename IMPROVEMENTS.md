@@ -348,13 +348,13 @@ Operational tools for managing runtime state, data lifecycle, and safe live oper
 - [x] **11.3.4** Forbid runtime mutation of sensitive/static keys (`TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, `DATABASE_PRIVATE_URL`, `ADMIN_USER_IDS`, webhook ports/URLs).
 - [x] **11.3.5** `/admin config` and `/admin config <key> <value>` must validate and cast values by key type (int/bool/float/str) and fail-fast on invalid input.
 - [x] **11.3.6** Audit log must store old value → new value, actor, and timestamp.
-- [x] **11.3.7** `/admin config reset <key>` removes override and confirms effective default value.
+- [x] **11.3.7** `/admin config reset <key>` removes override and confirms effective default value. `reset_override()` accepts `actor_id` for audit traceability.
 
 #### 11.1 Maintenance Mode (built on 11.3)
 
 - [x] **11.1.1** `/admin maintenance on [message]` sets persisted maintenance flag/message in `config_overrides`.
 - [x] **11.1.2** `/admin maintenance off` clears maintenance override and resumes normal operation.
-- [x] **11.1.3** Define ConversationHandler behavior explicitly: active `/report` sessions are cancelled with a clear message and cleanup.
+- [x] **11.1.3** Define ConversationHandler behavior explicitly: active `/report` sessions are cancelled with a single combined maintenance + cancellation message and cleanup. Safe for `callback_query.message` being `None`.
 - [x] **11.1.4** During maintenance, user commands + inline queries are blocked; admin commands remain available.
 - [x] **11.1.5** Scheduled jobs are soft-paused by flag check inside each job (no scheduler pause API assumption).
 - [x] **11.1.6** `GET /health` returns degraded maintenance status (`status: "degraded"`, maintenance flag/message).
@@ -365,10 +365,11 @@ Operational tools for managing runtime state, data lifecycle, and safe live oper
 
 - [x] **11.2.1** `/admin purge sightings [days]` (ad-hoc/manual) must be explicitly separate from automated retention cleanup job.
 - [x] **11.2.2** Add `/admin purge sightings zone <zone_name> [days]` for spam/retirement operations.
-- [x] **11.2.3** `/admin purge user <user_id>` must remove: user row, subscriptions, sightings, feedback received, feedback given, bans, warnings, and admin-action references where required by policy.
+- [x] **11.2.3** `/admin purge user <user_id>` must remove: user row, subscriptions, sightings, feedback received, feedback given, bans, warnings, and admin-action references where required by policy. Config overrides are preserved (shared state, not user-owned).
 - [x] **11.2.4** Purging feedback **given by** a user must recalculate affected sighting counters (`feedback_positive`/`feedback_negative`) transactionally.
 - [x] **11.2.5** `/admin export stats` defaults to CSV (operator-friendly), optional JSON, and excludes personal data by default.
 - [x] **11.2.6** Every purge/export command requires preview + explicit confirm.
+- [x] **11.2.7** Zone-scoped purge uses case-insensitive zone matching (consistent with `/admin zone`).
 
 #### 11.4 Testing (required before phase close)
 

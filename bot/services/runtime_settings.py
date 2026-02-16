@@ -120,7 +120,7 @@ class RuntimeSettings:
         )
         return old_value, new_value
 
-    async def reset_override(self, key: str) -> Any:
+    async def reset_override(self, key: str, actor_id: int | None = None) -> Any:
         spec = self._get_spec(key)
         await get_db().delete_config_override(key)
         return spec.default

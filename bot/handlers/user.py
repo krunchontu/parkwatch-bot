@@ -43,6 +43,13 @@ async def handle_start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle quick-action button clicks from the /start menu."""
     query = update.callback_query
     await query.answer()
+
+    # Ban check for callback queries (ban_check decorator only works with update.message)
+    if await get_db().is_banned(update.effective_user.id):
+        await query.edit_message_text(
+            "Your account has been restricted due to policy violations.\nContact the bot administrator for appeals."
+        )
+        return
     action = query.data
 
     if action == "start_subscribe":
