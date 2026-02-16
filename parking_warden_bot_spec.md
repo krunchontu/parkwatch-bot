@@ -43,8 +43,8 @@ Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
 | `/admin help [command]` | 8 | Done | Detailed help for a specific admin command |
 | `/admin announce all <msg>` | 10 | Done | Announce to all registered users |
 | `/admin announce zone <z> <msg>` | 10 | Done | Announce to zone subscribers |
-| `/admin maintenance on\|off` | 11 | Planned | Toggle maintenance mode |
-| `/admin config [key] [value]` | 11 | Planned | View/adjust runtime settings |
+| `/admin maintenance on\|off` | 11 | Done | Toggle maintenance mode |
+| `/admin config [key] [value]` | 11 | Done | View/adjust runtime settings |
 
 ---
 
@@ -59,7 +59,19 @@ User sends: /start
 Bot: "Welcome to ParkWatch SG! 🚗
       I'll alert you when parking wardens are spotted nearby.
       
-      To get started, which areas do you want alerts for?"
+      What would you like to do?"
+    │
+    ▼
+Bot shows quick-action menu:
+           [📍 Subscribe to Zones]
+           [🚨 Report a Sighting]
+           [📋 Recent Sightings]
+           [📊 My Stats]
+           [💬 Send Feedback]
+           [❓ Help]
+    │
+    ▼
+User taps: [📍 Subscribe to Zones]
     │
     ▼
 Bot shows: Inline keyboard with regions
@@ -70,16 +82,15 @@ User taps: [Central]
     │
     ▼
 Bot shows: Zones in Central region
-           [Tanjong Pagar] [Bugis] [Orchard] ... [◀ Back]
+           [Tanjong Pagar] [Bugis] [Orchard] ... [✅ Done]
     │
     ▼
-User taps: [Tanjong Pagar]
+User taps desired zones, then [✅ Done]
     │
     ▼
-Bot: "✅ Your zones: Tanjong Pagar
+Bot: "✅ Subscribed to N zone(s): ...
       
-      Use /subscribe to add more zones.
-      Use /unsubscribe to remove zones."
+      You'll now get alerts when wardens are spotted in these zones."
 ```
 
 ### Flow 1b: Unsubscribe (`/unsubscribe`)
@@ -473,7 +484,7 @@ Set `WEBHOOK_URL` to enable webhook mode. Structured JSON logging available via 
 | Logging | Structured JSON or human-readable text (`bot/logging_config.py`) |
 | Error Tracking | Sentry (optional, via `sentry-sdk`) |
 | Health Check | Asyncio HTTP server (`GET /health`) |
-| Testing | pytest + pytest-asyncio (257 tests) |
+| Testing | pytest + pytest-asyncio (repository test suite) |
 | Linting | ruff (lint + format) |
 | Type Checking | mypy |
 | CI | GitHub Actions (lint, typecheck, test on 3.10/3.11/3.12) |

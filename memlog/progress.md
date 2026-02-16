@@ -34,3 +34,26 @@ Next Steps:
 1. Validate behavior in staging Telegram environment for admin command UX and long-message export rendering.
 2. If accepted, proceed to prioritized Phase 12 sequence.
 3. Keep runtime setting allowlist synchronized with future mutable config additions.
+
+[UPDATE]
+Phase: 2.0
+Completed:
+- Performed judicious app review focused on documentation-to-code alignment across README/spec/CI and runtime handlers/services.
+- Rewrote `APP_REVIEW.md` into a current-state assessment with explicit Good/Bad/Ugly and world-class Telegram bot benchmark comparison.
+- Logged review-related change artifacts in `memlog/track-changes.md` and environment test blockers in `memlog/errors.md`.
+Next Steps:
+1. Resolve documentation drift (test counts, Phase status labels, `/start` flow descriptions).
+2. Implement truthful `/feedback` delivery acknowledgment with explicit zero-admin handling.
+3. Prioritize fanout reliability + observability baseline before major feature additions.
+Blockers:
+- Local dev dependency installation remains blocked by network/proxy restrictions.
+
+[UPDATE]
+Phase: 2.1
+Completed:
+- Fixed requested documentation drifts only: README test-count wording, Phase 11 status labels in spec, and `/start` onboarding flow description in spec.
+Next Steps:
+1. Validate remaining docs for any additional hardcoded metric drift.
+2. (Optional) implement truthful `/feedback` delivery acknowledgements as previously identified.
+Blockers:
+- No new blockers introduced for this docs-only patch.
