@@ -34,3 +34,14 @@
   - `test_phase11_data_management.py`: 3→10 tests (added zone-scoped purge, zero-match purge, full GDPR table coverage, config override preservation, negative feedback recalc, CSV key completeness, JSON no-PII assertion).
 - Updated `IMPROVEMENTS.md` Phase 11 items to document review fixes.
 - Updated `memlog/progress.md` to Phase 1.9.
+
+## 2026-02-16 (Documentation-vs-code app review refresh)
+- Rewrote `APP_REVIEW.md` with a stricter documentation-to-code audit, explicit good/bad/ugly sections, and benchmark comparison against world-class Telegram bots.
+- Added concrete mismatch callouts (test-count drift, Phase 11 status drift, `/start` flow drift, feedback confirmation semantics).
+- Added prioritized rewrite-first recommendations focused on documentation truthfulness, fanout hardening, and observability.
+
+## 2026-02-16 (Targeted docs drift fixes)
+- Updated `README.md` test language to remove stale hardcoded counts and use suite-oriented wording.
+- Updated `parking_warden_bot_spec.md` Phase 11 admin command statuses (`maintenance`, `config`) from Planned → Done.
+- Updated `/start` onboarding flow in `parking_warden_bot_spec.md` to reflect the current quick-action menu before region/zone selection.
+- Updated spec tech-stack testing row to remove stale hardcoded test count wording.

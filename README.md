@@ -165,7 +165,7 @@ parkwatch-bot/
 │   │   └── messages.py          # Message builders (alert formatting)
 │   ├── health.py                # Health check HTTP server (GET /health)
 │   └── logging_config.py        # Structured logging (text/JSON modes)
-├── tests/                       # 257 tests (unit, integration, infrastructure, admin, moderation, UX)
+├── tests/                       # pytest suite (unit, integration, infrastructure, admin, moderation, UX)
 ├── alembic/                     # Database migration scripts (3 migrations)
 ├── config.py                    # Environment configuration
 ├── pyproject.toml               # Project metadata, deps, tool configs
@@ -178,10 +178,10 @@ parkwatch-bot/
 ```bash
 pip install -e ".[dev]"
 
-pytest                        # all 257 tests
+pytest                        # run full test suite
 pytest -v                     # verbose output
-pytest tests/test_unit.py     # unit tests only (48 tests)
-pytest tests/test_database.py # integration tests only (57 tests)
+pytest tests/test_unit.py     # unit-focused tests
+pytest tests/test_database.py # database-focused tests
 ```
 
 ### Linting & Type Checking
