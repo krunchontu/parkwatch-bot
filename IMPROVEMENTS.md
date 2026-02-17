@@ -47,11 +47,11 @@ Phases 1 through 11 addressed critical bugs, UX issues, data persistence, robust
 
 ---
 
-## Current State Assessment (2026-02-14)
+## Current State Assessment (2026-02-16)
 
 ### What's Working Well
 
-1. **Feature completeness** — All 9 user commands + full admin command suite (12 commands) implemented and functional
+1. **Feature completeness** — All 10 user commands + full admin command suite (23 subcommands across Phases 8–11) implemented and functional
 2. **ConversationHandler** — Proper 6-state machine with timeout, fallbacks, and `/cancel` support
 3. **Database layer** — Clean dual-driver abstraction with WAL mode, connection pooling, parameterized queries
 4. **GPS-aware duplicate detection** — Haversine + 200m radius, zone-level fallback
@@ -497,7 +497,7 @@ Quick reference for all admin commands once fully implemented.
 | New column: `users.warnings` | 9.3 | ✅ Done | Warning count per user (integer, default 0) |
 | New method: `count_user_feedback_since()` | 10.3 | ✅ Done | Rate limiting for `/feedback` command (queries `admin_actions`) |
 | New method: `get_all_user_ids()` | 10.4 | ✅ Done | Fetch all registered user IDs for broadcast |
-| New table: `config_overrides` | 11.3 | Planned | Runtime configuration overrides |
+| New table: `config_overrides` | 11.3 | ✅ Done | Runtime configuration overrides |
 
 ## Environment Variables Added (Phase 7+)
 
@@ -518,24 +518,26 @@ Quick reference for all admin commands once fully implemented.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `bot/main.py` | ~260 | Application wiring: handler registration, lifecycle hooks, `main()` + backward-compat re-exports |
-| `bot/database.py` | ~855 | Dual-driver database abstraction (SQLite/PostgreSQL) including admin + moderation + Phase 10 queries |
+| `bot/main.py` | ~275 | Application wiring: handler registration, lifecycle hooks, `main()` + backward-compat re-exports |
+| `bot/database.py` | ~1025 | Dual-driver database abstraction (SQLite/PostgreSQL) including admin + moderation + Phase 10–11 queries |
 | `bot/zones.py` | ~200 | Zone data: `ZONES` dict (80 zones, 6 regions), `ZONE_COORDS` coordinate table |
 | `bot/utils.py` | ~70 | Pure helpers: `haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `generate_sighting_id`, `sanitize_description`, `SGT` |
-| `bot/handlers/user.py` | ~475 | User commands: `/start`, `/subscribe`, `/unsubscribe`, `/myzones`, `/help`, `/mystats`, `/share`, `/feedback` |
-| `bot/handlers/report.py` | ~630 | Report flow: 6-state ConversationHandler, feedback handler, `/recent` |
-| `bot/handlers/admin.py` | ~925 | Admin system: `admin_only` decorator, `/admin` router, all subcommands incl. announce |
+| `bot/handlers/user.py` | ~494 | User commands: `/start`, `/subscribe`, `/unsubscribe`, `/myzones`, `/help`, `/mystats`, `/share`, `/feedback` |
+| `bot/handlers/report.py` | ~644 | Report flow: 6-state ConversationHandler, feedback handler, `/recent` |
+| `bot/handlers/admin.py` | ~1184 | Admin system: `admin_only` decorator, `/admin` router, all subcommands incl. announce, config, maintenance, purge, export |
 | `bot/services/moderation.py` | ~50 | Moderation: `ban_check` decorator, `_check_auto_flag()` |
 | `bot/services/notifications.py` | ~45 | Notifications: `broadcast_alert()` with blocked-user cleanup |
+| `bot/services/maintenance.py` | ~66 | Maintenance-mode gating utilities and decorators |
+| `bot/services/runtime_settings.py` | ~133 | DB-backed runtime config access with typed casting |
 | `bot/ui/keyboards.py` | ~22 | Keyboard builders: `build_zone_keyboard()` |
 | `bot/ui/messages.py` | ~48 | Message builders: `build_alert_message()` |
 | `bot/handlers/__init__.py` | 1 | Package marker |
 | `bot/services/__init__.py` | 1 | Package marker |
 | `bot/ui/__init__.py` | 1 | Package marker |
-| `bot/health.py` | ~75 | Health check HTTP server (asyncio-based, `/health` endpoint) |
-| `bot/logging_config.py` | ~65 | Structured logging configuration (text/JSON modes) |
+| `bot/health.py` | ~83 | Health check HTTP server (asyncio-based, `/health` endpoint) |
+| `bot/logging_config.py` | ~67 | Structured logging configuration (text/JSON modes) |
 | `bot/__init__.py` | 1 | Package marker |
-| `config.py` | ~53 | Environment config and bot settings (Phases 1–9, incl. `MAX_WARNINGS`) |
+| `config.py` | ~60 | Environment config and bot settings (Phases 1–11, incl. `MAX_WARNINGS`, maintenance mode) |
 | `pyproject.toml` | ~80 | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | 5 | Runtime dependencies (for platforms that don't use pyproject.toml) |
 | `.env.example` | ~32 | Template for environment variables (including Phase 9 additions) |
@@ -545,13 +547,18 @@ Quick reference for all admin commands once fully implemented.
 | `alembic/versions/001_initial_schema.py` | ~80 | Baseline migration matching create_tables() |
 | `alembic/versions/002_admin_actions_table.py` | ~40 | Phase 8 migration: admin_actions audit log table |
 | `alembic/versions/003_phase9_user_management.py` | ~45 | Phase 9 migration: banned_users table, flagged/warnings columns |
-| `tests/conftest.py` | ~25 | Shared test fixtures (fresh SQLite DB per test) |
-| `tests/test_unit.py` | ~340 | Unit tests for pure functions and zone data integrity |
-| `tests/test_database.py` | ~600 | Database integration tests (CRUD, queries, transactions) |
-| `tests/test_phase7.py` | ~290 | Phase 7 tests: health check, logging, config, Sentry |
-| `tests/test_phase8.py` | ~630 | Phase 8 tests: admin auth, stats, lookup, audit log |
-| `tests/test_phase9.py` | ~800 | Phase 9 tests: banning, moderation, warnings, auto-flag, escalation |
-| `tests/test_phase10.py` | ~680 | Phase 10 tests: feedback, announce, start menu, UX |
+| `alembic/versions/004_phase11_config_overrides.py` | ~40 | Phase 11 migration: config_overrides table |
+| `tests/conftest.py` | ~23 | Shared test fixtures (fresh SQLite DB per test) |
+| `tests/test_unit.py` | ~338 | Unit tests for pure functions and zone data integrity |
+| `tests/test_database.py` | ~601 | Database integration tests (CRUD, queries, transactions) |
+| `tests/test_phase7.py` | ~292 | Phase 7 tests: health check, logging, config, Sentry |
+| `tests/test_phase8.py` | ~627 | Phase 8 tests: admin auth, stats, lookup, audit log |
+| `tests/test_phase9.py` | ~798 | Phase 9 tests: banning, moderation, warnings, auto-flag, escalation |
+| `tests/test_phase10.py` | ~687 | Phase 10 tests: feedback, announce, start menu, UX |
+| `tests/test_phase11_runtime_config.py` | ~225 | Phase 11 tests: runtime config casting, validation, allowlist |
+| `tests/test_phase11_maintenance.py` | ~188 | Phase 11 tests: maintenance gating, conversation cancellation |
+| `tests/test_phase11_data_management.py` | ~263 | Phase 11 tests: purge flows, feedback counter repair, export |
+| `tests/test_phase11_migration.py` | ~37 | Phase 11 tests: Alembic migration 004 |
 | `.github/workflows/ci.yml` | ~45 | GitHub Actions CI pipeline (lint + typecheck + test) |
 | `parking_warden_bot_spec.md` | ~700 | Full product specification (user flows, message formats, reputation, zones) |
 | `README.md` | ~300 | Operator documentation (setup, config, deployment, commands) |
@@ -562,4 +569,4 @@ Quick reference for all admin commands once fully implemented.
 
 ---
 
-*Last updated: 2026-02-16 (Phase 10 complete; roadmap aligned through Phase 14)*
+*Last updated: 2026-02-16 (Phase 11 complete; roadmap aligned through Phase 14)*
