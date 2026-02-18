@@ -33,10 +33,10 @@ def upgrade() -> None:
     )
 
     # New column: sightings.flagged (boolean as integer, default 0)
-    op.execute("ALTER TABLE sightings ADD COLUMN flagged INTEGER DEFAULT 0")
+    op.execute("ALTER TABLE sightings ADD COLUMN IF NOT EXISTS flagged INTEGER DEFAULT 0")
 
     # New column: users.warnings (integer, default 0)
-    op.execute("ALTER TABLE users ADD COLUMN warnings INTEGER DEFAULT 0")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS warnings INTEGER DEFAULT 0")
 
 
 def downgrade() -> None:

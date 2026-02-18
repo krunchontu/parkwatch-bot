@@ -22,7 +22,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.execute(
         """CREATE TABLE IF NOT EXISTS admin_actions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             admin_id BIGINT NOT NULL,
             action TEXT NOT NULL,
             target TEXT,
