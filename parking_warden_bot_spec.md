@@ -64,39 +64,111 @@ User sends: /start
     ▼
 Bot: "Welcome to ParkWatch SG! 🚗
       I'll alert you when parking wardens are spotted nearby.
-      
+
       What would you like to do?"
     │
     ▼
-Bot shows quick-action menu:
+Bot shows quick-action menu (inline keyboard):
            [📍 Subscribe to Zones]
            [🚨 Report a Sighting]
            [📋 Recent Sightings]
            [📊 My Stats]
            [💬 Send Feedback]
            [❓ Help]
-    │
-    ▼
+```
+
+**Button behaviors (Approach C — Hybrid Edit-in-Place + Back Button):**
+
+All buttons except Report and Subscribe edit the /start message in-place and show a `<< Back to Menu` button to return. This keeps interaction within a single message thread.
+
+```
 User taps: [📍 Subscribe to Zones]
     │
     ▼
-Bot shows: Inline keyboard with regions
+Bot edits message → region selection keyboard (existing flow)
            [Central] [Central North] [East] [West] [North] [North-East]
     │
     ▼
-User taps: [Central]
-    │
-    ▼
-Bot shows: Zones in Central region
-           [Tanjong Pagar] [Bugis] [Orchard] ... [✅ Done]
-    │
-    ▼
-User taps desired zones, then [✅ Done]
+User taps: [Central]  →  Zones  →  [✅ Done]
     │
     ▼
 Bot: "✅ Subscribed to N zone(s): ...
-      
       You'll now get alerts when wardens are spotted in these zones."
+```
+
+```
+User taps: [🚨 Report a Sighting]
+    │
+    ▼
+Bot: Deletes /start menu message
+     Sends NEW message with report method choice:
+     "📍 Where did you spot the warden?
+      Share your location for the most accurate alert,
+      or select a zone manually."
+      [📍 Share Location]  [📝 Select Zone Manually]
+    │
+    ▼
+(Enters full report ConversationHandler — see Flow 2/3)
+```
+
+```
+User taps: [📋 Recent Sightings]
+    │
+    ▼
+Bot edits message in-place → shows recent sightings
+     (same content as /recent command):
+     "📋 Recent sightings in your zones:
+      🔴 Tanjong Pagar — 2 mins ago
+         📝 Outside Maxwell Food Centre ..."
+
+      [<< Back to Menu]
+    │
+    ▼
+User taps: [<< Back to Menu]
+    │
+    ▼
+Bot edits message → restores original /start quick-action menu
+```
+
+```
+User taps: [📊 My Stats]
+    │
+    ▼
+Bot edits message in-place → shows reporter stats
+     (same content as /mystats command):
+     "📊 Your Reporter Stats
+      🏆 Badge: ⭐ Regular
+      📝 Total reports: 8 ..."
+
+      [<< Back to Menu]
+```
+
+```
+User taps: [💬 Send Feedback]
+    │
+    ▼
+Bot edits message in-place → shows feedback instructions:
+     "💬 Send feedback to the admins by typing:
+      /feedback Your message here
+
+      Example: /feedback Love this bot! Could you add more zones?"
+
+      [<< Back to Menu]
+```
+
+```
+User taps: [❓ Help]
+    │
+    ▼
+Bot edits message in-place → shows full help text
+     (same content as /help command):
+     "🚗 ParkWatch SG Commands
+
+      Getting Started:
+      /start — Main menu with quick actions
+      /subscribe — Add more zones ..."
+
+      [<< Back to Menu]
 ```
 
 ### Flow 1b: Unsubscribe (`/unsubscribe`)

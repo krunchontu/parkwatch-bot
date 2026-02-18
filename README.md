@@ -61,7 +61,7 @@ You should see:
 
 | Command | Description |
 |---------|-------------|
-| `/start` | Open quick-action menu (subscribe, report, recent, stats, feedback, help) |
+| `/start` | Open quick-action menu — buttons execute actions inline (edit-in-place with back navigation; report enters ConversationHandler) |
 | `/subscribe` | Add more zones to your subscriptions |
 | `/unsubscribe` | Remove zones from your subscriptions |
 | `/myzones` | View your current subscribed zones |

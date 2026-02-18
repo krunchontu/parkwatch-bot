@@ -55,3 +55,12 @@
 - Removed stale hardcoded test counts from `parking_warden_bot_spec.md` test sections and test-file table.
 - Updated `/start` command wording in `parking_warden_bot_spec.md` to reflect current quick-action menu entrypoint.
 - Updated `/start` command wording in `README.md` to reflect quick-action menu behavior.
+
+## 2026-02-18 (11.5.1 /start menu — Approach C implementation plan, docs only)
+- Designed Approach C (Hybrid Edit-in-Place + Back Button Navigation) after analyzing all UX permutations against Telegram Bot API constraints.
+- `IMPROVEMENTS.md` section 11.5.1: Replaced placeholder checklist with full implementation plan including architecture description, callback routing table, 7 implementation steps with file/function details, and edge case handling.
+- `parking_warden_bot_spec.md` Flow 1: Rewrote onboarding flow to document per-button behavior — edit-in-place for reads (recent, stats, help), ConversationHandler entry for report, clear instructions for feedback, back button navigation for all screens.
+- `README.md`: Updated `/start` command table description to reflect inline execution with back navigation.
+- `APP_REVIEW.md`: Added "Status: planned" annotations to Part 1 finding #5 (docs-code divergence on /start flow) and Part 4 finding #1 (/start buttons decorative) with cross-reference to IMPROVEMENTS.md 11.5.1.
+- `memlog/progress.md`: Added Phase 2.4 update with Approach C design completion and next steps.
+- No code files modified — documentation-only changes preparing for implementation.
