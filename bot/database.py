@@ -195,8 +195,14 @@ class Database:
         if self.driver == "postgresql":
             # PostgreSQL uses SERIAL instead of AUTOINCREMENT
             statements = [s.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY") for s in statements]
-            # PostgreSQL requires TIMESTAMPTZ to accept timezone-aware datetimes
-            statements = [s.replace("TIMESTAMP", "TIMESTAMPTZ") for s in statements]
+            # PostgreSQL requires TIMESTAMPTZ to accept timezone-aware datetimes.
+            # Protect CURRENT_TIMESTAMP from being mangled by the replacement.
+            statements = [
+                s.replace("CURRENT_TIMESTAMP", "CURRENT_TS_HOLD")
+                .replace("TIMESTAMP", "TIMESTAMPTZ")
+                .replace("CURRENT_TS_HOLD", "CURRENT_TIMESTAMP")
+                for s in statements
+            ]
         for stmt in statements:
             await self._execute(stmt)
 
