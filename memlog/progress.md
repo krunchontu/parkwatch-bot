@@ -78,3 +78,20 @@ Next Steps:
 2. Keep spec command wording synced with handler UX changes.
 Blockers:
 - None for docs-only scope.
+
+[UPDATE]
+Phase: 2.4
+Completed:
+- Designed Approach C (Hybrid Edit-in-Place + Back Button Navigation) for fixing 11.5.1 `/start` menu buttons.
+- Analyzed all UX permutations against Telegram API constraints (edit_message_text limits, ConversationHandler entry from CallbackQueryHandler, ForceReply patterns, message length limits).
+- Updated `IMPROVEMENTS.md` section 11.5.1 with full implementation plan: architecture, callback routing table, implementation steps, edge cases.
+- Updated `parking_warden_bot_spec.md` Flow 1 with new button behaviors (edit-in-place for reads, ConversationHandler entry for report, instructions for feedback, back button navigation).
+- Updated `README.md` `/start` command description to reflect inline execution with back navigation.
+- Updated `APP_REVIEW.md` Part 1 finding #5 and Part 4 finding #1 with planned fix status and Approach C reference.
+- Documentation-only changes — no code modified.
+Next Steps:
+1. Implement 11.5.1 Approach C (text builders, back button handler, ConversationHandler entry point, handle_callback guard).
+2. Add tests for new handlers and text builders.
+3. Proceed to remaining 11.5.x items after 11.5.1 is verified.
+Blockers:
+- None for documentation scope.

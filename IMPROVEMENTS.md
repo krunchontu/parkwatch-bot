@@ -390,12 +390,77 @@ Fix structural risks and quality gaps identified in the 2026-02-16 code review b
 
 The `/start` menu is the first thing every new user sees. Currently 5 of 6 buttons just say "Use /command" instead of performing the action. This must be fixed before any growth push.
 
-- [ ] **11.5.1.1** `start_report` button: initiate the report ConversationHandler directly from the callback (send the "Where did you spot the warden?" prompt with location/manual buttons, set state to `CHOOSING_METHOD`). Requires sending a new message (callbacks cannot start a ConversationHandler on an edited message — use `query.message.reply_text()` then delete or edit the original).
-- [ ] **11.5.1.2** `start_recent` button: call `recent()` logic inline — fetch user's subscribed zones, show recent sightings or "no sightings" message directly in the callback response.
-- [ ] **11.5.1.3** `start_mystats` button: call `mystats()` logic inline — render the stats message directly.
-- [ ] **11.5.1.4** `start_feedback` button: show a prompt asking the user to type their feedback, with a note that the bot is now listening. Use `context.user_data` to flag "awaiting feedback" and handle the next text message as feedback content (or keep the current `/feedback <msg>` pattern but explain it clearly).
-- [ ] **11.5.1.5** `start_help` button: render the full `/help` text inline instead of a summary.
-- [ ] **11.5.1.6** Update `parking_warden_bot_spec.md` Flow 1 to match the new behavior.
+**Implementation approach: Hybrid Edit-in-Place + Back Button Navigation (Approach C)**
+
+Uses two complementary patterns based on each button's interaction model:
+- **Read-only buttons** (recent, mystats, help): Edit the `/start` message in-place with full content + `<< Back to Menu` button. Keeps interaction within a single message, avoids chat clutter.
+- **Multi-step flow** (report): Add `CallbackQueryHandler` as a `ConversationHandler` entry point. Deletes the `/start` menu message, sends a new message with location/manual keyboard. Enters the existing 6-state report flow.
+- **Text input** (feedback): Edit the `/start` message with clear `/feedback <msg>` instructions and example + `<< Back to Menu` button. Avoids new state management; keeps the proven single-command pattern.
+
+This matches the UX patterns used by @BotFather and top-tier Telegram bots: settings/info edited in-place, multi-step flows spawn new messages, every screen has a back button.
+
+##### Architecture
+
+**Text builder extraction (DRY):** Extract display logic from `recent()`, `mystats()`, `help_command()` into pure async functions (`_build_recent_text()`, `_build_mystats_text()`, `_build_help_text()`) that return strings. Both the `/command` handlers and `/start` button callbacks call the same text builders but deliver through different channels (`reply_text` vs `edit_message_text`).
+
+**Back button routing:** A single `back_to_start_menu()` callback handler (triggered by `callback_data="start_back"`) re-renders the original `/start` menu text + 6-button keyboard via `edit_message_text`. Reused by all read-only screens.
+
+**Report entry point:** `report_from_start()` is registered as a `CallbackQueryHandler(pattern="^start_report$")` entry point in the existing `report_conv` ConversationHandler. Uses `per_message=False` (current default), `allow_reentry=True`, and anchored pattern. A guard in `handle_callback()` skips `start_report` to prevent double-routing (ConversationHandler is registered first and takes priority).
+
+##### Callback data routing table
+
+| Button | `callback_data` | Handler | Action | Next state |
+|--------|---|---|---|---|
+| Subscribe | `start_subscribe` | `handle_start_menu()` | Show regions | Zone selection flow |
+| Report | `start_report` | `report_from_start()` (conv entry) | Delete menu, show method choice | `CHOOSING_METHOD` |
+| Recent | `start_recent` | `handle_start_menu()` | Edit with sightings + back btn | Await back |
+| My Stats | `start_mystats` | `handle_start_menu()` | Edit with stats + back btn | Await back |
+| Feedback | `start_feedback` | `handle_start_menu()` | Edit with instructions + back btn | Await back |
+| Help | `start_help` | `handle_start_menu()` | Edit with help text + back btn | Await back |
+| Back | `start_back` | `back_to_start_menu()` | Re-render /start menu | Menu |
+
+##### Implementation steps
+
+- [ ] **11.5.1.1** Extract text builders into `bot/handlers/user.py`:
+  - `_build_recent_text(user_id: int) -> str` — reuse in `recent()` and `start_recent` callback
+  - `_build_mystats_text(user_id: int) -> str` — reuse in `mystats()` and `start_mystats` callback
+  - `_build_help_text() -> str` — reuse in `help_command()` and `start_help` callback
+  - `_build_back_button() -> InlineKeyboardMarkup` — single `<< Back to Menu` button (`callback_data="start_back"`)
+  - Refactor existing `recent()`, `mystats()`, `help_command()` to call these builders (zero behavior change)
+- [ ] **11.5.1.2** Add `back_to_start_menu()` handler in `bot/handlers/user.py`:
+  - Triggered by `callback_data="start_back"`
+  - Re-renders the original `/start` welcome text + 6-button keyboard via `query.edit_message_text()`
+  - Clears `context.user_data["awaiting_feedback_from_start"]` if set
+- [ ] **11.5.1.3** Update `handle_start_menu()` for read-only buttons:
+  - `start_recent`: call `_build_recent_text(user_id)`, edit message with result + back button
+  - `start_mystats`: call `_build_mystats_text(user_id)`, edit message with result + back button (parse_mode="Markdown")
+  - `start_help`: call `_build_help_text()`, edit message with result + back button (parse_mode="Markdown")
+  - `start_feedback`: edit message with clear `/feedback <msg>` instructions, usage example, and back button
+- [ ] **11.5.1.4** Add `report_from_start()` in `bot/handlers/report.py`:
+  - `await query.answer()`, delete the `/start` menu message, send new message with location/manual keyboard
+  - Return `CHOOSING_METHOD` to enter the ConversationHandler state machine
+  - Add as `CallbackQueryHandler(report_from_start, pattern="^start_report$")` entry point in `report_conv` (in `main.py`)
+  - Add guard in `handle_callback()` to skip `start_report` pattern (prevent double-routing)
+  - Add `allow_reentry=True` to `report_conv` so re-pressing the button works
+- [ ] **11.5.1.5** Add `start_back` routing in `main.py`:
+  - Route `start_back` callback to `back_to_start_menu()` in `handle_callback()`
+- [ ] **11.5.1.6** Tests:
+  - Text builder unit tests: no zones, no sightings, with sightings, no reports, with reports, help text content
+  - Callback routing tests: each button edits message correctly, back button restores menu
+  - Report from start: deletes menu, shows method choice, enters ConversationHandler
+  - Guard test: `handle_callback` does not intercept `start_report` (ConversationHandler owns it)
+- [ ] **11.5.1.7** Update documentation:
+  - `parking_warden_bot_spec.md` Flow 1: document new button behaviors (edit-in-place, back button, report entry)
+  - `README.md`: update `/start` command description
+  - `APP_REVIEW.md`: mark `/start` menu buttons as planned/fixed
+
+##### Edge cases
+
+- **Message length:** `_build_recent_text()` truncates at 3,500 chars (safety margin before 4,096 limit) with "... truncated" marker
+- **"Message not modified" error:** Catch `BadRequest` when back button re-renders identical menu content
+- **Report menu deletion:** `delete_message()` wrapped in try/except — continue if message already deleted
+- **Maintenance mode:** All new handlers use existing `@maintenance_check` / `@maintenance_conversation_check` decorators
+- **Ban enforcement:** Existing manual ban check in `handle_start_menu()` covers all callback paths (11.5.2 will fix this properly with decorator)
 
 #### 11.5.2 Fix `ban_check` Decorator — Callback Query Safety (Bug)
 
@@ -705,4 +770,4 @@ Quick reference for all admin commands once fully implemented.
 
 ---
 
-*Last updated: 2026-02-17 (Phase 11 complete; Phase 11.5 tech debt planned; roadmap aligned through Phase 14)*
+*Last updated: 2026-02-18 (Phase 11 complete; Phase 11.5 tech debt planned with Approach C for 11.5.1 /start menu; roadmap aligned through Phase 14)*

@@ -67,6 +67,8 @@ The spec (Flow 1, lines 59-99) implies tapping menu buttons leads directly into 
 
 **Severity:** Medium — the spec promises seamless inline UX; reality requires command re-entry for 4 of 6 menu items.
 
+**Status:** Implementation planned as 11.5.1 using Approach C (Hybrid Edit-in-Place + Back Button Navigation). Spec Flow 1, IMPROVEMENTS.md, and README.md updated to reflect target behavior. See `IMPROVEMENTS.md` section 11.5.1 for full implementation plan.
+
 #### 6. Spec's "share" message includes `https://t.me/YourBotName` placeholder
 
 The spec at line 357 shows a hardcoded `https://t.me/YourBotName`. The code at `user.py:405` correctly uses `bot_username` from the API. This is a spec-only issue — code is correct, spec hasn't been updated to reflect the dynamic behavior.
@@ -168,6 +170,8 @@ The bot relies on `python-telegram-bot`'s built-in signal handling. There's no e
 
 ### 1. `/start` menu buttons are mostly decorative
 Five of six `/start` menu buttons just tell the user to type a command rather than actually performing the action. This is the first thing every new user experiences, and it's a broken promise. The spec documents a seamless inline flow; the code delivers a redirect to manual command entry.
+
+**Status:** Planned fix — Approach C (Hybrid Edit-in-Place + Back Button Navigation) documented in `IMPROVEMENTS.md` section 11.5.1. Read-only buttons (recent, stats, help) will edit the message in-place with a back button. Report will enter the ConversationHandler via a new entry point. Feedback will show clear instructions with a back button.
 
 ### 2. Health check port collision in webhook mode
 When `WEBHOOK_URL` is set and `HEALTH_CHECK_PORT` is not, both the webhook listener and the health check server try to use `PORT` (default 8443). This will cause a startup failure on platforms like Railway that inject `PORT`. The fix is trivial (default health check to 8080 regardless of `PORT`), but it's been documented as a feature when it's actually a bug.
