@@ -498,7 +498,7 @@ Set `WEBHOOK_URL` to enable webhook mode. Structured JSON logging available via 
 
 ### Database Schema
 
-Data is stored in 6 tables with 5 indexes. Tables are created automatically on startup via `bot/database.py`. Schema changes are tracked via Alembic migrations in `alembic/versions/`.
+Data is stored in 7 tables with 6 indexes. Tables are created automatically on startup via `bot/database.py`. Schema changes are tracked via Alembic migrations in `alembic/versions/`.
 
 ```sql
 -- User accounts, report counts, and warning tracking
@@ -523,6 +523,9 @@ admin_actions (id INTEGER PK AUTOINCREMENT, admin_id BIGINT, action TEXT,
 
 -- Banned users (Phase 9)
 banned_users (telegram_id BIGINT PK, banned_by BIGINT, reason TEXT, banned_at TIMESTAMP)
+
+-- Runtime configuration overrides (Phase 11)
+config_overrides (key TEXT PK, value TEXT NOT NULL, updated_by BIGINT NOT NULL, updated_at TIMESTAMP)
 ```
 
 The database driver is selected automatically based on `DATABASE_URL`:
@@ -689,11 +692,13 @@ The database driver is selected automatically based on `DATABASE_URL`:
 | `bot/handlers/admin.py` | Admin system: `admin_only` decorator, `/admin` router, all subcommands incl. announce |
 | `bot/services/notifications.py` | Alert broadcast with blocked-user cleanup |
 | `bot/services/moderation.py` | `ban_check` decorator, `_check_auto_flag()` |
+| `bot/services/maintenance.py` | Maintenance-mode gating utilities and decorators |
+| `bot/services/runtime_settings.py` | DB-backed runtime config access with typed casting |
 | `bot/ui/keyboards.py` | Keyboard builders: `build_zone_keyboard()` |
 | `bot/ui/messages.py` | Message builders: `build_alert_message()` |
 | `bot/health.py` | Health check HTTP server (asyncio, `GET /health`) |
 | `bot/logging_config.py` | Structured logging configuration (text/JSON) |
-| `config.py` | Environment config and bot settings (Phases 1–10, incl. `MAX_WARNINGS`) |
+| `config.py` | Environment config and bot settings (Phases 1–11, incl. `MAX_WARNINGS`, maintenance mode) |
 | `pyproject.toml` | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | Runtime dependencies (legacy compat for platforms without pyproject.toml) |
 | `alembic.ini` | Alembic migration framework configuration |
@@ -710,6 +715,10 @@ The database driver is selected automatically based on `DATABASE_URL`:
 | `tests/test_phase8.py` | Phase 8 admin foundation tests |
 | `tests/test_phase9.py` | Phase 9 user management & moderation tests |
 | `tests/test_phase10.py` | Phase 10 tests: feedback, announce, start menu, UX |
+| `tests/test_phase11_runtime_config.py` | Phase 11 tests: runtime config |
+| `tests/test_phase11_maintenance.py` | Phase 11 tests: maintenance mode |
+| `tests/test_phase11_data_management.py` | Phase 11 tests: purge & export |
+| `tests/test_phase11_migration.py` | Phase 11 tests: Alembic migration |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline (lint + typecheck + test) |
 | `.env.example` | Environment variable template (including Phase 9 vars) |
 | `Procfile` | Heroku-style process declaration |
@@ -721,4 +730,4 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 ---
 
-*Last updated: February 2026 (Phase 10 complete; roadmap aligned through Phase 14 — see IMPROVEMENTS.md)*
+*Last updated: February 2026 (Phase 11 complete; roadmap aligned through Phase 14 — see IMPROVEMENTS.md)*

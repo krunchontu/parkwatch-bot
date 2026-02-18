@@ -2,7 +2,7 @@
 
 ## Audit Summary
 
-**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 8 update), 2026-02-14 (Phase 9 update), 2026-02-15 (Phase 10 planning), 2026-02-16 (Phase 11–14 roadmap alignment)
+**Date:** 2026-02-12 (initial), 2026-02-13 (Phase 8 update), 2026-02-14 (Phase 9 update), 2026-02-15 (Phase 10 planning), 2026-02-16 (Phase 11–14 roadmap alignment), 2026-02-17 (Phase 11.5 tech debt plan)
 **Scope:** Full code review against `parking_warden_bot_spec.md` and `README.md`
 **Files reviewed:** `bot/main.py`, `bot/database.py`, `bot/health.py`, `bot/logging_config.py`, `config.py`, `requirements.txt`, `.env.example`
 
@@ -47,11 +47,11 @@ Phases 1 through 11 addressed critical bugs, UX issues, data persistence, robust
 
 ---
 
-## Current State Assessment (2026-02-14)
+## Current State Assessment (2026-02-16)
 
 ### What's Working Well
 
-1. **Feature completeness** — All 9 user commands + full admin command suite (12 commands) implemented and functional
+1. **Feature completeness** — All 10 user commands + full admin command suite (23 subcommands across Phases 8–11) implemented and functional
 2. **ConversationHandler** — Proper 6-state machine with timeout, fallbacks, and `/cancel` support
 3. **Database layer** — Clean dual-driver abstraction with WAL mode, connection pooling, parameterized queries
 4. **GPS-aware duplicate detection** — Haversine + 200m radius, zone-level fallback
@@ -380,7 +380,143 @@ Operational tools for managing runtime state, data lifecycle, and safe live oper
 
 ---
 
+### Phase 11.5: Tech Debt & Hardening (Pre-Growth)
+
+Fix structural risks and quality gaps identified in the 2026-02-16 code review before building growth features on top. Ordered by dependency: correctness bugs first, then architecture, then test infra.
+
+**Why this phase exists:** Phases 12–14 add user-facing complexity (referrals, leaderboards, inline mode, i18n). Each of these amplifies existing weaknesses — sequential broadcast breaks under leaderboard fanout, untyped dicts cause silent bugs when new columns are added, and the God Objects make safe iteration slower. Fixing foundations first reduces total cost.
+
+#### 11.5.1 Fix `/start` Menu — Buttons Must Do What They Promise (UX bug)
+
+The `/start` menu is the first thing every new user sees. Currently 5 of 6 buttons just say "Use /command" instead of performing the action. This must be fixed before any growth push.
+
+- [ ] **11.5.1.1** `start_report` button: initiate the report ConversationHandler directly from the callback (send the "Where did you spot the warden?" prompt with location/manual buttons, set state to `CHOOSING_METHOD`). Requires sending a new message (callbacks cannot start a ConversationHandler on an edited message — use `query.message.reply_text()` then delete or edit the original).
+- [ ] **11.5.1.2** `start_recent` button: call `recent()` logic inline — fetch user's subscribed zones, show recent sightings or "no sightings" message directly in the callback response.
+- [ ] **11.5.1.3** `start_mystats` button: call `mystats()` logic inline — render the stats message directly.
+- [ ] **11.5.1.4** `start_feedback` button: show a prompt asking the user to type their feedback, with a note that the bot is now listening. Use `context.user_data` to flag "awaiting feedback" and handle the next text message as feedback content (or keep the current `/feedback <msg>` pattern but explain it clearly).
+- [ ] **11.5.1.5** `start_help` button: render the full `/help` text inline instead of a summary.
+- [ ] **11.5.1.6** Update `parking_warden_bot_spec.md` Flow 1 to match the new behavior.
+
+#### 11.5.2 Fix `ban_check` Decorator — Callback Query Safety (Bug)
+
+`ban_check` in `moderation.py` assumes `update.message` exists, which crashes on callback queries. The `handle_start_menu` function manually works around this. This split enforcement is a bug source.
+
+- [ ] **11.5.2.1** Rewrite `ban_check` to detect whether the update is a message or callback query, and reply via the correct path (`update.message.reply_text` vs `update.callback_query.answer`/`edit_message_text`).
+- [ ] **11.5.2.2** Remove the manual `is_banned()` check in `handle_start_menu` — the decorator should handle it.
+- [ ] **11.5.2.3** Add test cases for `ban_check` on both message-based and callback-query-based updates.
+
+#### 11.5.3 Fix Feedback Rate Limiting — Decouple from Audit Log (Bug)
+
+`count_user_feedback_since()` queries `admin_actions WHERE action = 'user_feedback'`. If audit logs are ever purged, rate limits silently break.
+
+- [ ] **11.5.3.1** Add a dedicated `user_feedback` table (or a `user_rate_limits` table with `(user_id, action, timestamp)` schema) for rate limiting.
+- [ ] **11.5.3.2** Migrate `count_user_feedback_since()` to query the new table. Keep the `admin_actions` audit log write for traceability.
+- [ ] **11.5.3.3** Add Alembic migration `005_user_feedback_table.py`.
+- [ ] **11.5.3.4** Update `/admin purge user` to also delete from the new table.
+
+#### 11.5.4 Fix GDPR Purge — Scrub PII from `admin_actions.detail` (Compliance)
+
+`purge_user_data()` NULLs `admin_actions.target` but leaves PII in `detail` (e.g., "Banned user: @john_doe for spamming").
+
+- [ ] **11.5.4.1** Change `purge_user_data()` to also NULL the `detail` column on matching `admin_actions` rows (where `target` matched the purged user ID).
+- [ ] **11.5.4.2** Add a test that verifies both `target` and `detail` are scrubbed after purge.
+
+#### 11.5.5 Fix Callback Data Validation (Defensive)
+
+Callback data like `feedback_pos_{id}` and `zone_{name}` is parsed by `str.replace()` with no validation. Malformed data fails silently.
+
+- [ ] **11.5.5.1** Add a `parse_callback_data(prefix, data)` helper in `bot/utils.py` that strips the prefix and validates the remainder (UUID format for sighting IDs, valid zone name for zones).
+- [ ] **11.5.5.2** Apply to `handle_feedback`, `handle_zone_selection`, `handle_unsubscribe_callback`, `handle_report_zone`, and `handle_callback` in `main.py`.
+- [ ] **11.5.5.3** Return early with `query.answer("Invalid action", show_alert=True)` on validation failure instead of silent breakage.
+
+#### 11.5.6 Fix Health Check Port Collision (Ops bug)
+
+When `WEBHOOK_URL` is set and `HEALTH_CHECK_PORT` is not, both webhook and health check bind to `PORT` (default 8443).
+
+- [ ] **11.5.6.1** Change `config.py` so `HEALTH_CHECK_PORT` defaults to `8080` unconditionally, not `$PORT`. Only use `HEALTH_CHECK_PORT` env var if explicitly set.
+- [ ] **11.5.6.2** Update README Configuration table to reflect the fixed default.
+- [ ] **11.5.6.3** Add a startup warning in `main.py` if `HEALTH_CHECK_PORT == PORT` and `WEBHOOK_URL` is set.
+
+#### 11.5.7 Refactor Broadcast — Bounded Concurrency + Retry (Reliability)
+
+`broadcast_alert()` sends one message at a time with no retry. This is the biggest reliability risk for scale.
+
+- [ ] **11.5.7.1** Rewrite `broadcast_alert()` to use `asyncio.Semaphore(20)` for bounded concurrency (respects Telegram's ~30 msg/sec limit with safety margin).
+- [ ] **11.5.7.2** Add single retry with 1s backoff on transient `telegram.error.TimedOut` / `telegram.error.RetryAfter` errors.
+- [ ] **11.5.7.3** Track and return structured delivery results: `{sent: int, failed: int, blocked: list[int], retried: int}`.
+- [ ] **11.5.7.4** Apply the same pattern to `/admin announce` broadcasts.
+- [ ] **11.5.7.5** Add tests for concurrency limiting and retry behavior using mocked bot.
+
+#### 11.5.8 Remove `main.py` Re-Export Shim (Code smell)
+
+`main.py` re-exports 30+ symbols with `# noqa: F401` so tests can `from bot.main import ...`. Tests should import from the actual modules.
+
+- [ ] **11.5.8.1** Update `tests/test_unit.py` to import from `bot.utils`, `bot.zones`, `bot.ui.messages`.
+- [ ] **11.5.8.2** Update `tests/test_phase7.py` to import `_init_sentry` from `bot.main` (this one is legitimate — it lives in `main.py`).
+- [ ] **11.5.8.3** Update `tests/test_phase8.py` to import from `bot.handlers.admin` and `bot.zones`.
+- [ ] **11.5.8.4** Update `tests/test_phase9.py` to import from `bot.services.moderation` and `bot.handlers.admin`.
+- [ ] **11.5.8.5** Remove all re-export lines and `# noqa: F401` comments from `main.py`. Only keep imports that `main.py` itself uses.
+- [ ] **11.5.8.6** Verify all tests pass with the new import paths.
+
+#### 11.5.9 Introduce Typed Data Models (Architecture)
+
+Replace raw `dict[str, Any]` returns from database methods with `TypedDict` classes. Full dataclass/ORM migration is overkill for this stage; `TypedDict` is the minimum-cost fix that adds type safety without changing runtime behavior.
+
+- [ ] **11.5.9.1** Create `bot/models.py` with `TypedDict` definitions: `SightingRow`, `UserRow`, `FeedbackRow`, `AdminActionRow`, `BannedUserRow`, `ConfigOverrideRow`, `GlobalStatsRow`.
+- [ ] **11.5.9.2** Update `database.py` return type annotations to use the typed dicts.
+- [ ] **11.5.9.3** Verify mypy passes with the new types (catches any `dict["wrong_key"]` bugs).
+
+#### 11.5.10 Carve `database.py` into Repository Modules (Architecture)
+
+Split the 1,025-line God Object by domain responsibility. This is the prerequisite for safe iteration on Phase 12+ features.
+
+- [ ] **11.5.10.1** Extract `bot/repositories/subscriptions.py` — `get_subscriptions`, `add_subscription`, `remove_subscription`, `clear_subscriptions`, `get_zone_subscribers`, `get_subscriber_count`.
+- [ ] **11.5.10.2** Extract `bot/repositories/sightings.py` — `add_sighting`, `get_sighting`, `get_recent_sightings_for_zones`, `find_recent_zone_sightings`, `count_reports_since`, `get_oldest_report_since`, `cleanup_old_sightings`, `delete_sighting`, `flag_sighting`, `get_flagged_sightings`, `get_total_sightings_count`, `purge_sightings_older_than`.
+- [ ] **11.5.10.3** Extract `bot/repositories/users.py` — `ensure_user`, `get_user_stats`, `increment_report_count`, `get_user_details`, `get_user_by_username`, `get_user_recent_sightings`, `get_user_subscriptions_list`, `ban_user`, `unban_user`, `is_banned`, `get_banned_users`, `get_user_warnings`, `increment_warnings`, `reset_warnings`, `get_all_user_ids`, `purge_user_data`.
+- [ ] **11.5.10.4** Extract `bot/repositories/feedback.py` — `get_user_feedback`, `set_feedback`, `apply_feedback`, `update_feedback_counts`, `calculate_accuracy`, `get_user_feedback_totals`, `get_low_accuracy_reporters`, `count_user_feedback_since`.
+- [ ] **11.5.10.5** Extract `bot/repositories/admin.py` — `log_admin_action`, `get_admin_log`, `get_global_stats`, `get_top_zones_by_subscribers`, `get_top_zones_by_sightings`, `get_zone_details`, `get_zone_top_reporters`, `get_zone_recent_sightings`, `export_stats`.
+- [ ] **11.5.10.6** Extract `bot/repositories/config.py` — `get_config_override`, `get_all_config_overrides`, `upsert_config_override`, `delete_config_override`.
+- [ ] **11.5.10.7** Keep `database.py` as the connection manager + `Database` facade that delegates to repository modules (preserving the existing `get_db().method()` API for now to avoid a massive handler rewrite).
+- [ ] **11.5.10.8** Verify all tests pass — zero functional change.
+
+#### 11.5.11 Split `admin.py` into Subcommand Modules (Architecture)
+
+The 1,184-line admin handler grows with every phase. Split by responsibility seam.
+
+- [ ] **11.5.11.1** Extract `bot/handlers/admin_moderation.py` — `_admin_ban`, `_admin_unban`, `_admin_banlist`, `_admin_warn`, `_admin_delete`, `_admin_review`.
+- [ ] **11.5.11.2** Extract `bot/handlers/admin_ops.py` — `_admin_config`, `_admin_maintenance`, `_admin_purge`, `_admin_export`.
+- [ ] **11.5.11.3** Extract `bot/handlers/admin_announce.py` — `_admin_announce`.
+- [ ] **11.5.11.4** Keep `admin.py` as the router: `admin_only` decorator, `admin_command()` dispatcher, `ADMIN_COMMANDS_HELP`, `ADMIN_COMMANDS_DETAILED`, `_admin_stats`, `_admin_user`, `_admin_zone`, `_admin_log`, `_admin_help`.
+- [ ] **11.5.11.5** Verify all tests pass — zero functional change.
+
+#### 11.5.12 Add Handler-Level Tests (Quality)
+
+Zero handler tests is the single biggest quality gap. Add mocked-update tests for critical paths.
+
+- [ ] **11.5.12.1** Create `tests/test_handlers_user.py` — mock `Update`/`Context` objects. Test: `/start` renders menu, `/subscribe` shows regions, `/myzones` shows subscriptions, `/help` output, `/feedback` relays to admins, `/feedback` rate limit, banned user rejection.
+- [ ] **11.5.12.2** Create `tests/test_handlers_report.py` — test ConversationHandler state transitions: report entry → location → description → confirm → broadcast. Test: rate limiting rejection, duplicate detection rejection, cancel flow, GPS nearest-zone detection.
+- [ ] **11.5.12.3** Create `tests/test_handlers_admin.py` — test: admin-only rejection, `/admin stats` output, `/admin ban` + notify, `/admin warn` + escalation, `/admin delete` two-step flow, `/admin config` validation.
+- [ ] **11.5.12.4** Create `tests/test_handlers_callbacks.py` — test: `handle_callback` routing, feedback positive/negative, zone toggle, unsubscribe flow, start menu button routing.
+- [ ] **11.5.12.5** Add a shared `tests/helpers.py` with `make_update()`, `make_context()`, `make_callback_query()` factory functions for building mock Telegram objects.
+
+#### 11.5.13 Fix SQLite Cleanup Cascade Inconsistency (Code smell)
+
+`cleanup_old_sightings()` manually deletes feedback before sightings despite `ON DELETE CASCADE` being set. Pick one strategy.
+
+- [ ] **11.5.13.1** Remove the manual feedback deletion from `cleanup_old_sightings()` — rely on `ON DELETE CASCADE` (already enabled via `PRAGMA foreign_keys=ON`).
+- [ ] **11.5.13.2** Add a test that verifies cascading delete works correctly for both SQLite and PostgreSQL drivers.
+
+#### 11.5.14 Testing (required before phase close)
+
+- [ ] **11.5.14.1** All 11.5.1–11.5.13 items must have associated tests before marking complete.
+- [ ] **11.5.14.2** CI must pass: `ruff check . && ruff format --check . && mypy bot/ config.py && pytest`.
+- [ ] **11.5.14.3** Update `IMPROVEMENTS.md` File Reference with new files and line counts.
+
+---
+
 ### Phase 12: Growth Features (Re-scoped)
+
+**Depends on:** Phase 11.5 (at minimum 11.5.2 ban_check fix, 11.5.7 broadcast concurrency, 11.5.10 database split). Growth features land on top of the hardened base.
 
 Prioritize by value-to-effort and dependency fit:
 
@@ -400,7 +536,7 @@ Prioritize by value-to-effort and dependency fit:
 
 #### 12.2 Inline mode
 - [ ] Define `InlineQueryResultArticle` format and redaction policy (no reporter identity, no precise GPS by default).
-- [ ] Add inline-specific maintenance + ban checks (existing `ban_check` is message-based only).
+- [ ] Add inline-specific maintenance + ban checks (requires 11.5.2 `ban_check` fix for callback/query safety).
 - [ ] Use Telegram inline query caching (`cache_time`) and throttling controls.
 
 #### 12.3 Replace heatmaps with text-first activity summaries
@@ -497,7 +633,7 @@ Quick reference for all admin commands once fully implemented.
 | New column: `users.warnings` | 9.3 | ✅ Done | Warning count per user (integer, default 0) |
 | New method: `count_user_feedback_since()` | 10.3 | ✅ Done | Rate limiting for `/feedback` command (queries `admin_actions`) |
 | New method: `get_all_user_ids()` | 10.4 | ✅ Done | Fetch all registered user IDs for broadcast |
-| New table: `config_overrides` | 11.3 | Planned | Runtime configuration overrides |
+| New table: `config_overrides` | 11.3 | ✅ Done | Runtime configuration overrides |
 
 ## Environment Variables Added (Phase 7+)
 
@@ -518,24 +654,26 @@ Quick reference for all admin commands once fully implemented.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `bot/main.py` | ~260 | Application wiring: handler registration, lifecycle hooks, `main()` + backward-compat re-exports |
-| `bot/database.py` | ~855 | Dual-driver database abstraction (SQLite/PostgreSQL) including admin + moderation + Phase 10 queries |
+| `bot/main.py` | ~275 | Application wiring: handler registration, lifecycle hooks, `main()` + backward-compat re-exports |
+| `bot/database.py` | ~1025 | Dual-driver database abstraction (SQLite/PostgreSQL) including admin + moderation + Phase 10–11 queries |
 | `bot/zones.py` | ~200 | Zone data: `ZONES` dict (80 zones, 6 regions), `ZONE_COORDS` coordinate table |
 | `bot/utils.py` | ~70 | Pure helpers: `haversine_meters`, `get_reporter_badge`, `get_accuracy_indicator`, `generate_sighting_id`, `sanitize_description`, `SGT` |
-| `bot/handlers/user.py` | ~475 | User commands: `/start`, `/subscribe`, `/unsubscribe`, `/myzones`, `/help`, `/mystats`, `/share`, `/feedback` |
-| `bot/handlers/report.py` | ~630 | Report flow: 6-state ConversationHandler, feedback handler, `/recent` |
-| `bot/handlers/admin.py` | ~925 | Admin system: `admin_only` decorator, `/admin` router, all subcommands incl. announce |
+| `bot/handlers/user.py` | ~494 | User commands: `/start`, `/subscribe`, `/unsubscribe`, `/myzones`, `/help`, `/mystats`, `/share`, `/feedback` |
+| `bot/handlers/report.py` | ~644 | Report flow: 6-state ConversationHandler, feedback handler, `/recent` |
+| `bot/handlers/admin.py` | ~1184 | Admin system: `admin_only` decorator, `/admin` router, all subcommands incl. announce, config, maintenance, purge, export |
 | `bot/services/moderation.py` | ~50 | Moderation: `ban_check` decorator, `_check_auto_flag()` |
 | `bot/services/notifications.py` | ~45 | Notifications: `broadcast_alert()` with blocked-user cleanup |
+| `bot/services/maintenance.py` | ~66 | Maintenance-mode gating utilities and decorators |
+| `bot/services/runtime_settings.py` | ~133 | DB-backed runtime config access with typed casting |
 | `bot/ui/keyboards.py` | ~22 | Keyboard builders: `build_zone_keyboard()` |
 | `bot/ui/messages.py` | ~48 | Message builders: `build_alert_message()` |
 | `bot/handlers/__init__.py` | 1 | Package marker |
 | `bot/services/__init__.py` | 1 | Package marker |
 | `bot/ui/__init__.py` | 1 | Package marker |
-| `bot/health.py` | ~75 | Health check HTTP server (asyncio-based, `/health` endpoint) |
-| `bot/logging_config.py` | ~65 | Structured logging configuration (text/JSON modes) |
+| `bot/health.py` | ~83 | Health check HTTP server (asyncio-based, `/health` endpoint) |
+| `bot/logging_config.py` | ~67 | Structured logging configuration (text/JSON modes) |
 | `bot/__init__.py` | 1 | Package marker |
-| `config.py` | ~53 | Environment config and bot settings (Phases 1–9, incl. `MAX_WARNINGS`) |
+| `config.py` | ~60 | Environment config and bot settings (Phases 1–11, incl. `MAX_WARNINGS`, maintenance mode) |
 | `pyproject.toml` | ~80 | Project metadata, dependencies, tool configs (pytest/ruff/mypy) |
 | `requirements.txt` | 5 | Runtime dependencies (for platforms that don't use pyproject.toml) |
 | `.env.example` | ~32 | Template for environment variables (including Phase 9 additions) |
@@ -545,13 +683,18 @@ Quick reference for all admin commands once fully implemented.
 | `alembic/versions/001_initial_schema.py` | ~80 | Baseline migration matching create_tables() |
 | `alembic/versions/002_admin_actions_table.py` | ~40 | Phase 8 migration: admin_actions audit log table |
 | `alembic/versions/003_phase9_user_management.py` | ~45 | Phase 9 migration: banned_users table, flagged/warnings columns |
-| `tests/conftest.py` | ~25 | Shared test fixtures (fresh SQLite DB per test) |
-| `tests/test_unit.py` | ~340 | Unit tests for pure functions and zone data integrity |
-| `tests/test_database.py` | ~600 | Database integration tests (CRUD, queries, transactions) |
-| `tests/test_phase7.py` | ~290 | Phase 7 tests: health check, logging, config, Sentry |
-| `tests/test_phase8.py` | ~630 | Phase 8 tests: admin auth, stats, lookup, audit log |
-| `tests/test_phase9.py` | ~800 | Phase 9 tests: banning, moderation, warnings, auto-flag, escalation |
-| `tests/test_phase10.py` | ~680 | Phase 10 tests: feedback, announce, start menu, UX |
+| `alembic/versions/004_phase11_config_overrides.py` | ~40 | Phase 11 migration: config_overrides table |
+| `tests/conftest.py` | ~23 | Shared test fixtures (fresh SQLite DB per test) |
+| `tests/test_unit.py` | ~338 | Unit tests for pure functions and zone data integrity |
+| `tests/test_database.py` | ~601 | Database integration tests (CRUD, queries, transactions) |
+| `tests/test_phase7.py` | ~292 | Phase 7 tests: health check, logging, config, Sentry |
+| `tests/test_phase8.py` | ~627 | Phase 8 tests: admin auth, stats, lookup, audit log |
+| `tests/test_phase9.py` | ~798 | Phase 9 tests: banning, moderation, warnings, auto-flag, escalation |
+| `tests/test_phase10.py` | ~687 | Phase 10 tests: feedback, announce, start menu, UX |
+| `tests/test_phase11_runtime_config.py` | ~225 | Phase 11 tests: runtime config casting, validation, allowlist |
+| `tests/test_phase11_maintenance.py` | ~188 | Phase 11 tests: maintenance gating, conversation cancellation |
+| `tests/test_phase11_data_management.py` | ~263 | Phase 11 tests: purge flows, feedback counter repair, export |
+| `tests/test_phase11_migration.py` | ~37 | Phase 11 tests: Alembic migration 004 |
 | `.github/workflows/ci.yml` | ~45 | GitHub Actions CI pipeline (lint + typecheck + test) |
 | `parking_warden_bot_spec.md` | ~700 | Full product specification (user flows, message formats, reputation, zones) |
 | `README.md` | ~300 | Operator documentation (setup, config, deployment, commands) |
@@ -562,4 +705,4 @@ Quick reference for all admin commands once fully implemented.
 
 ---
 
-*Last updated: 2026-02-16 (Phase 10 complete; roadmap aligned through Phase 14)*
+*Last updated: 2026-02-17 (Phase 11 complete; Phase 11.5 tech debt planned; roadmap aligned through Phase 14)*
