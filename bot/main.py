@@ -27,9 +27,7 @@ from config import (
 )
 
 from .database import close_db, get_db, init_db
-
-# Backward-compatible re-exports (tests import these from bot.main)
-from .handlers.admin import ADMIN_COMMANDS_DETAILED, ADMIN_COMMANDS_HELP, admin_command, admin_only  # noqa: F401
+from .handlers.admin import admin_command
 from .handlers.report import (
     AWAITING_DESCRIPTION,
     AWAITING_LOCATION,
@@ -72,17 +70,7 @@ from .handlers.user import (
 from .health import start_health_server, stop_health_server
 from .logging_config import setup_logging
 from .services.maintenance import is_maintenance_enabled
-from .services.moderation import _check_auto_flag, ban_check  # noqa: F401
 from .services.runtime_settings import get_runtime_settings
-from .ui.messages import build_alert_message  # noqa: F401
-from .utils import (  # noqa: F401
-    generate_sighting_id,
-    get_accuracy_indicator,
-    get_reporter_badge,
-    haversine_meters,
-    sanitize_description,
-)
-from .zones import ZONE_COORDS, ZONES  # noqa: F401
 
 # Set up structured logging (must happen before any logger usage)
 setup_logging(log_format=LOG_FORMAT)

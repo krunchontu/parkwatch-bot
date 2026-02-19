@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from config import ADMIN_USER_IDS
 
 from ..database import get_db
+from ..formatting import DIVIDER
 from ..services.maintenance import maintenance_check
 from ..services.moderation import ban_check
 from ..ui.keyboards import build_zone_keyboard
@@ -300,7 +301,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/share \u2014 Invite friends to join\n"
         "/feedback \u2014 Send feedback to the admins\n\n"
         "/help \u2014 Show this message\n\n"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"{DIVIDER}\n"
         "\U0001f4a1 *Tips:*\n"
         "\u2022 Spot a warden? Use /report to alert others!\n"
         "\u2022 Rate alerts with \U0001f44d/\U0001f44e to build trust\n"
@@ -468,10 +469,10 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Build admin notification
     admin_msg = (
         "\U0001f4ec User Feedback\n"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"{DIVIDER}\n"
         f"\U0001f464 From: {username} (ID: {user_id})\n"
         f"\U0001f3c6 Badge: {badge} ({report_count} reports)\n"
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"{DIVIDER}\n"
         f"\U0001f4ac {message}\n"
     )
 

@@ -1,8 +1,6 @@
 """Message builders for ParkWatch SG."""
 
-from datetime import timezone
-
-from ..utils import SGT
+from ..formatting import DIVIDER, format_sgt_time
 
 
 def build_alert_message(sighting, pos, neg, badge, accuracy_indicator, feedback_received=False):
@@ -17,12 +15,7 @@ def build_alert_message(sighting, pos, neg, badge, accuracy_indicator, feedback_
     lat = sighting.get("lat")
     lng = sighting.get("lng")
 
-    # Convert to SGT for display; reported_at may be naive (UTC) or aware
-    if reported_at.tzinfo is None:
-        reported_at_sgt = reported_at.replace(tzinfo=timezone.utc).astimezone(SGT)
-    else:
-        reported_at_sgt = reported_at.astimezone(SGT)
-    time_str = reported_at_sgt.strftime("%I:%M %p SGT")
+    time_str = format_sgt_time(reported_at)
 
     msg = f"\U0001f6a8 WARDEN ALERT \u2014 {zone}\n"
     msg += f"\U0001f550 Spotted: {time_str}\n"
@@ -36,8 +29,8 @@ def build_alert_message(sighting, pos, neg, badge, accuracy_indicator, feedback_
     else:
         msg += f"\U0001f464 Reporter: {badge}\n"
 
-    msg += "\n\u23f0 Extend your parking now!\n"
-    msg += "\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+    msg += f"\n\u23f0 Extend your parking now!\n"
+    msg += f"\n{DIVIDER}\n"
 
     if feedback_received:
         msg += f"\U0001f4ca Feedback: \U0001f44d {pos} / \U0001f44e {neg}\n"

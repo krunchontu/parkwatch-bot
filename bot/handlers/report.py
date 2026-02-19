@@ -15,6 +15,7 @@ from telegram import (
 from telegram.ext import ContextTypes, ConversationHandler
 
 from ..database import get_db
+from ..formatting import format_sgt
 from ..services.maintenance import maintenance_check, maintenance_conversation_check
 from ..services.moderation import _check_auto_flag, ban_check
 from ..services.notifications import broadcast_alert
@@ -33,6 +34,19 @@ logger = logging.getLogger(__name__)
 
 # ConversationHandler states for report flow
 CHOOSING_METHOD, SELECTING_REGION, SELECTING_ZONE, AWAITING_LOCATION, AWAITING_DESCRIPTION, CONFIRMING = range(6)
+
+_PENDING_REPORT_KEYS = (
+    "pending_report_zone",
+    "pending_report_description",
+    "pending_report_lat",
+    "pending_report_lng",
+)
+
+
+def clear_pending_report(user_data: dict) -> None:
+    """Remove all pending-report keys from *user_data*."""
+    for key in _PENDING_REPORT_KEYS:
+        user_data.pop(key, None)
 
 
 @ban_check
@@ -80,11 +94,7 @@ async def handle_report_location_button(update: Update, context: ContextTypes.DE
 @maintenance_conversation_check
 async def handle_location_cancel_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle cancel text from reply keyboard during location sharing."""
-    context.user_data.pop("pending_report_zone", None)
-    context.user_data.pop("pending_report_description", None)
-    context.user_data.pop("pending_report_lat", None)
-    context.user_data.pop("pending_report_lng", None)
-
+    clear_pending_report(context.user_data)
     await update.message.reply_text("\u274c Report cancelled.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
@@ -379,10 +389,7 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     await query.edit_message_text(confirm_msg)
 
     # Clear pending report data
-    context.user_data.pop("pending_report_zone", None)
-    context.user_data.pop("pending_report_description", None)
-    context.user_data.pop("pending_report_lat", None)
-    context.user_data.pop("pending_report_lng", None)
+    clear_pending_report(context.user_data)
     return ConversationHandler.END
 
 
@@ -391,21 +398,14 @@ async def handle_report_cancel(update: Update, context: ContextTypes.DEFAULT_TYP
     """Cancel report via inline button."""
     query = update.callback_query
     await query.answer()
-    context.user_data.pop("pending_report_zone", None)
-    context.user_data.pop("pending_report_description", None)
-    context.user_data.pop("pending_report_lat", None)
-    context.user_data.pop("pending_report_lng", None)
+    clear_pending_report(context.user_data)
     await query.edit_message_text("\u274c Report cancelled.")
     return ConversationHandler.END
 
 
 async def cancel_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /cancel command during report flow."""
-    context.user_data.pop("pending_report_zone", None)
-    context.user_data.pop("pending_report_description", None)
-    context.user_data.pop("pending_report_lat", None)
-    context.user_data.pop("pending_report_lng", None)
-
+    clear_pending_report(context.user_data)
     await update.message.reply_text("\u274c Report cancelled.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
@@ -436,7 +436,7 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     if sighting_data:
         reported_at = sighting_data["reported_at"]
         if reported_at.tzinfo is None:
-            reported_at = reported_at.replace(tzinfo=timezone.utc)
+            reported_at = reported_at.replace(tzinfo=timezone.utc)  # noqa: keep inline — used for timedelta math
         sighting_age = datetime.now(timezone.utc) - reported_at
         feedback_window_hours = await get_runtime_settings().get("FEEDBACK_WINDOW_HOURS")
         if sighting_age > timedelta(hours=feedback_window_hours):

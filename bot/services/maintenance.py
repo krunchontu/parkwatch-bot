@@ -47,10 +47,10 @@ def maintenance_conversation_check(func):
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await is_maintenance_enabled():
-            context.user_data.pop("pending_report_zone", None)
-            context.user_data.pop("pending_report_description", None)
-            context.user_data.pop("pending_report_lat", None)
-            context.user_data.pop("pending_report_lng", None)
+            # Lazy import to avoid circular dependency
+            from ..handlers.report import clear_pending_report
+
+            clear_pending_report(context.user_data)
             context.user_data.pop("report_region", None)
             msg = await maintenance_message()
             cancel_text = f"{msg}\n\nYour active report was cancelled due to maintenance."

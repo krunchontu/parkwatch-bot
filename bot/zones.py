@@ -1,5 +1,18 @@
 """Zone data for ParkWatch SG — 80 zones across 6 Singapore regions."""
 
+from __future__ import annotations
+
+
+def find_zone(query: str) -> str | None:
+    """Case-insensitive zone lookup. Returns the canonical zone name or ``None``."""
+    query_lower = query.lower()
+    for region in ZONES.values():
+        for z in region["zones"]:
+            if z.lower() == query_lower:
+                return z
+    return None
+
+
 # Zone hierarchy: region_key → {name, zones[]}
 ZONES = {
     "central": {
