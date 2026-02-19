@@ -105,7 +105,7 @@ async def admin_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         return
 
     if message.startswith(announce_prefix):
-        ann_message = message[len(announce_prefix):].strip()
+        ann_message = message[len(announce_prefix) :].strip()
         if not ann_message:
             await update.message.reply_text("Usage: /admin maintenance on --announce <message>")
             return

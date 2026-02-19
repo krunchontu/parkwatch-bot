@@ -109,7 +109,7 @@ async def admin_announce(update: Update, context: ContextTypes.DEFAULT_TYPE, arg
         for region in ZONES.values():
             for z in region["zones"]:
                 if rest_lower.startswith(z.lower()):
-                    remainder = rest[len(z):].lstrip()
+                    remainder = rest[len(z) :].lstrip()
                     if remainder:  # must have message text after zone name
                         resolved_zone = z
                         msg_text = remainder
