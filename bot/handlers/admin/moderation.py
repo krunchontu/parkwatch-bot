@@ -11,7 +11,6 @@ from config import ADMIN_USER_IDS
 from ...database import get_db
 from ...formatting import DIVIDER, format_sgt, format_sgt_short
 from ...services.runtime_settings import get_runtime_settings
-from ...utils import get_accuracy_indicator
 
 logger = logging.getLogger(__name__)
 

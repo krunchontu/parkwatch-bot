@@ -15,7 +15,6 @@ from telegram import (
 from telegram.ext import ContextTypes, ConversationHandler
 
 from ..database import get_db
-from ..formatting import format_sgt
 from ..services.maintenance import maintenance_check, maintenance_conversation_check
 from ..services.moderation import _check_auto_flag, ban_check
 from ..services.notifications import broadcast_alert
@@ -436,7 +435,7 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     if sighting_data:
         reported_at = sighting_data["reported_at"]
         if reported_at.tzinfo is None:
-            reported_at = reported_at.replace(tzinfo=timezone.utc)  # noqa: keep inline — used for timedelta math
+            reported_at = reported_at.replace(tzinfo=timezone.utc)  # ensure UTC for timedelta math
         sighting_age = datetime.now(timezone.utc) - reported_at
         feedback_window_hours = await get_runtime_settings().get("FEEDBACK_WINDOW_HOURS")
         if sighting_age > timedelta(hours=feedback_window_hours):

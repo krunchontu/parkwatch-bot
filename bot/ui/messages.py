@@ -29,7 +29,7 @@ def build_alert_message(sighting, pos, neg, badge, accuracy_indicator, feedback_
     else:
         msg += f"\U0001f464 Reporter: {badge}\n"
 
-    msg += f"\n\u23f0 Extend your parking now!\n"
+    msg += "\n\u23f0 Extend your parking now!\n"
     msg += f"\n{DIVIDER}\n"
 
     if feedback_received:
