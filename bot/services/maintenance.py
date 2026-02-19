@@ -50,8 +50,9 @@ def maintenance_conversation_check(func):
             # Lazy import to avoid circular dependency
             from ..handlers.report import clear_pending_report
 
-            clear_pending_report(context.user_data)
-            context.user_data.pop("report_region", None)
+            if context.user_data is not None:
+                clear_pending_report(context.user_data)
+                context.user_data.pop("report_region", None)
             msg = await maintenance_message()
             cancel_text = f"{msg}\n\nYour active report was cancelled due to maintenance."
             if update.message:
