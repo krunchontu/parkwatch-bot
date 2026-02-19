@@ -319,7 +319,7 @@ class TestAdminAnnounce:
             admin_ids = {999}
         with (
             patch("bot.handlers.admin.ADMIN_USER_IDS", admin_ids),
-            patch("bot.handlers.admin.get_db", return_value=mock_db),
+            patch("bot.handlers.admin.announce.get_db", return_value=mock_db),
         ):
             asyncio.get_event_loop().run_until_complete(admin_command(update, context))
 
