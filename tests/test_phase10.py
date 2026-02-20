@@ -27,7 +27,7 @@ class TestCountUserFeedbackSince:
     @pytest.mark.asyncio
     async def test_counts_recent_feedback(self, db):
         """Should count feedback messages within the time window."""
-        await db.log_admin_action(100, "user_feedback", target="100", detail="test")
+        await db.record_rate_limit_event(100, "user_feedback")
         since = datetime.now(timezone.utc) - timedelta(hours=1)
         count = await db.count_user_feedback_since(100, since)
         assert count == 1
@@ -35,8 +35,7 @@ class TestCountUserFeedbackSince:
     @pytest.mark.asyncio
     async def test_excludes_old_feedback(self, db):
         """Should not count feedback older than the time window."""
-        # Log a feedback action, then check with a future 'since' time
-        await db.log_admin_action(100, "user_feedback", target="100", detail="old message")
+        await db.record_rate_limit_event(100, "user_feedback")
         since = datetime.now(timezone.utc) + timedelta(hours=1)
         count = await db.count_user_feedback_since(100, since)
         assert count == 0
@@ -44,7 +43,7 @@ class TestCountUserFeedbackSince:
     @pytest.mark.asyncio
     async def test_excludes_other_actions(self, db):
         """Should not count non-feedback admin actions."""
-        await db.log_admin_action(100, "view_stats", target="100")
+        await db.record_rate_limit_event(100, "other_action")
         since = datetime.now(timezone.utc) - timedelta(hours=1)
         count = await db.count_user_feedback_since(100, since)
         assert count == 0
@@ -52,7 +51,7 @@ class TestCountUserFeedbackSince:
     @pytest.mark.asyncio
     async def test_excludes_other_users(self, db):
         """Should not count feedback from other users."""
-        await db.log_admin_action(200, "user_feedback", target="200", detail="other user")
+        await db.record_rate_limit_event(200, "user_feedback")
         since = datetime.now(timezone.utc) - timedelta(hours=1)
         count = await db.count_user_feedback_since(100, since)
         assert count == 0
@@ -60,8 +59,8 @@ class TestCountUserFeedbackSince:
     @pytest.mark.asyncio
     async def test_counts_multiple_feedback(self, db):
         """Should count multiple feedback messages within the window."""
-        await db.log_admin_action(100, "user_feedback", target="100", detail="first")
-        await db.log_admin_action(100, "user_feedback", target="100", detail="second")
+        await db.record_rate_limit_event(100, "user_feedback")
+        await db.record_rate_limit_event(100, "user_feedback")
         since = datetime.now(timezone.utc) - timedelta(hours=1)
         count = await db.count_user_feedback_since(100, since)
         assert count == 2
@@ -90,6 +89,7 @@ class TestFeedbackCommand:
         mock.count_user_feedback_since = AsyncMock(return_value=feedback_count)
         mock.get_user_stats = AsyncMock(return_value={"report_count": report_count})
         mock.log_admin_action = AsyncMock()
+        mock.record_rate_limit_event = AsyncMock()
         return mock
 
     def _run(self, update, context, mock_db, admin_ids=None):

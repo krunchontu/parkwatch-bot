@@ -482,9 +482,10 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Failed to relay feedback to admin {admin_id}: {e}")
 
-    # Log to audit trail
+    # Log to audit trail and rate limit table
     preview = message[:100] + ("..." if len(message) > 100 else "")
     await db.log_admin_action(user_id, "user_feedback", target=str(user_id), detail=preview)
+    await db.record_rate_limit_event(user_id, "user_feedback")
 
     # Confirm to user
     await update.message.reply_text(

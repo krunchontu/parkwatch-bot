@@ -191,6 +191,14 @@ class Database:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
             "CREATE INDEX IF NOT EXISTS idx_config_overrides_updated_at ON config_overrides (updated_at)",
+            # Phase 11.5: Decoupled rate limiting (independent of admin_actions)
+            """CREATE TABLE IF NOT EXISTS user_rate_limits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id BIGINT NOT NULL,
+                action TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_user_rate_limits_lookup ON user_rate_limits (user_id, action, created_at)",
         ]
         if self.driver == "postgresql":
             # PostgreSQL uses SERIAL instead of AUTOINCREMENT
@@ -947,6 +955,7 @@ class Database:
                 await conn.execute("DELETE FROM sightings WHERE reporter_id = ?", (user_id,))
                 await conn.execute("DELETE FROM subscriptions WHERE telegram_id = ?", (user_id,))
                 await conn.execute("DELETE FROM banned_users WHERE telegram_id = ?", (user_id,))
+                await conn.execute("DELETE FROM user_rate_limits WHERE user_id = ?", (user_id,))
                 await conn.execute("DELETE FROM users WHERE telegram_id = ?", (user_id,))
                 await conn.execute(
                     "UPDATE admin_actions SET target = NULL, detail = NULL WHERE target = ?", (str(user_id),)
@@ -980,6 +989,7 @@ class Database:
             await conn.execute("DELETE FROM sightings WHERE reporter_id = $1", user_id)
             await conn.execute("DELETE FROM subscriptions WHERE telegram_id = $1", user_id)
             await conn.execute("DELETE FROM banned_users WHERE telegram_id = $1", user_id)
+            await conn.execute("DELETE FROM user_rate_limits WHERE user_id = $1", user_id)
             await conn.execute("DELETE FROM users WHERE telegram_id = $1", user_id)
             await conn.execute(
                 "UPDATE admin_actions SET target = NULL, detail = NULL WHERE target = $1", str(user_id)
@@ -1021,11 +1031,22 @@ class Database:
         rows = await self._fetchall("SELECT telegram_id FROM users")
         return [r["telegram_id"] for r in rows]
 
+    async def record_rate_limit_event(self, user_id: int, action: str) -> None:
+        """Record a rate-limited action for the given user."""
+        ph = self._ph
+        await self._execute(
+            f"INSERT INTO user_rate_limits (user_id, action, created_at) VALUES ({ph(1)}, {ph(2)}, {ph(3)})",
+            (user_id, action, datetime.now(timezone.utc)),
+        )
+
     async def count_user_feedback_since(self, user_id: int, since: datetime) -> int:
-        """Count feedback messages sent by a user since a given time (for rate limiting)."""
+        """Count feedback messages sent by a user since a given time (for rate limiting).
+
+        Uses the dedicated user_rate_limits table (decoupled from audit log).
+        """
         row = await self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM admin_actions "
-            f"WHERE action = 'user_feedback' AND target = {self._ph(1)} AND created_at > {self._ph(2)}",
-            (str(user_id), since),
+            f"SELECT COUNT(*) AS cnt FROM user_rate_limits "
+            f"WHERE user_id = {self._ph(1)} AND action = 'user_feedback' AND created_at > {self._ph(2)}",
+            (user_id, since),
         )
         return row["cnt"] if row else 0
