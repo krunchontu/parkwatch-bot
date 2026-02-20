@@ -596,24 +596,28 @@ class TestStartMenu:
         assert any(d.startswith("region_") for d in callback_datas)
 
     def test_start_menu_report_callback(self):
-        """Clicking 'Report a Sighting' should show report instructions."""
-        from bot.handlers.user import handle_start_menu
+        """Clicking 'Report a Sighting' should delete the menu and send method-choice message."""
+        from bot.handlers.report import CHOOSING_METHOD, report_from_start
 
         update = MagicMock()
         update.callback_query.data = "start_report"
         update.callback_query.answer = AsyncMock()
-        update.callback_query.edit_message_text = AsyncMock()
+        update.callback_query.message.delete = AsyncMock()
+        update.effective_chat.id = 100
 
-        mock_db = MagicMock()
-        mock_db.is_banned = AsyncMock(return_value=False)
-        with (
-            patch("bot.services.moderation.get_db", return_value=mock_db),
-            patch("bot.handlers.user.get_db", return_value=mock_db),
-        ):
-            asyncio.get_event_loop().run_until_complete(handle_start_menu(update, MagicMock()))
+        context = MagicMock()
+        context.bot.send_message = AsyncMock()
 
-        text = update.callback_query.edit_message_text.call_args[0][0]
-        assert "/report" in text
+        result = asyncio.get_event_loop().run_until_complete(report_from_start(update, context))
+
+        # Should delete the /start menu message
+        update.callback_query.message.delete.assert_called_once()
+        # Should send a new method-choice message
+        context.bot.send_message.assert_called_once()
+        call_kwargs = context.bot.send_message.call_args
+        assert "location" in call_kwargs.kwargs.get("text", call_kwargs[1].get("text", "")).lower()
+        # Should return CHOOSING_METHOD to enter the ConversationHandler
+        assert result == CHOOSING_METHOD
 
     def test_start_menu_feedback_callback(self):
         """Clicking 'Send Feedback' should show feedback instructions."""
