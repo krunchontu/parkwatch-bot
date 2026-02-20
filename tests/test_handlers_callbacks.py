@@ -5,7 +5,7 @@ Tests: handle_callback routing, feedback positive/negative, zone toggle,
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from .helpers import make_callback_update, make_context, make_mock_db
 

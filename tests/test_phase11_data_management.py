@@ -164,7 +164,6 @@ async def test_purge_user_data_removes_all_tables(db):
 @pytest.mark.asyncio
 async def test_purge_user_data_scrubs_admin_action_detail(db):
     """GDPR purge must NULL both target AND detail in admin_actions."""
-    now = datetime.now(timezone.utc)
     await db.ensure_user(100, "john_doe")
     await db.log_admin_action(999, "ban_user", target=str(100), detail="Banned user: @john_doe for spamming")
     await db.log_admin_action(999, "warn_user", target=str(100), detail="Warning #1: stop spamming")

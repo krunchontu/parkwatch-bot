@@ -9,7 +9,7 @@ import io
 import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, cast
 
 from .models import (
     AdminActionRow,
@@ -284,9 +284,10 @@ class Database:
 
     async def get_user_stats(self, user_id: int) -> UserStatsRow | None:
         """Get user row (telegram_id, username, report_count)."""
-        return await self._fetchone(
+        row = await self._fetchone(
             f"SELECT telegram_id, username, report_count FROM users WHERE telegram_id = {self._ph(1)}", (user_id,)
         )
+        return cast(UserStatsRow, row) if row else None
 
     async def increment_report_count(self, user_id: int) -> int:
         """Increment report_count and return new value."""
@@ -385,7 +386,8 @@ class Database:
 
     async def get_sighting(self, sighting_id: str) -> SightingRow | None:
         """Fetch a single sighting by ID."""
-        return await self._fetchone(f"SELECT * FROM sightings WHERE id = {self._ph(1)}", (sighting_id,))
+        row = await self._fetchone(f"SELECT * FROM sightings WHERE id = {self._ph(1)}", (sighting_id,))
+        return cast(SightingRow, row) if row else None
 
     async def get_sighting_reporter(self, sighting_id: str) -> int | None:
         """Get reporter_id for a sighting (for self-rating prevention)."""
@@ -588,10 +590,11 @@ class Database:
 
     async def get_admin_log(self, limit: int = 20) -> list[AdminActionRow]:
         """Get the most recent admin actions."""
-        return await self._fetchall(
+        rows = await self._fetchall(
             f"SELECT * FROM admin_actions ORDER BY created_at DESC LIMIT {self._ph(1)}",
             (limit,),
         )
+        return cast(list[AdminActionRow], rows)
 
     # --- Phase 8: Admin — Global Statistics ---
 
@@ -658,10 +661,11 @@ class Database:
 
     async def get_user_details(self, user_id: int) -> UserRow | None:
         """Get detailed user information for admin lookup."""
-        return await self._fetchone(
+        row = await self._fetchone(
             f"SELECT telegram_id, username, report_count, created_at FROM users WHERE telegram_id = {self._ph(1)}",
             (user_id,),
         )
+        return cast(UserRow, row) if row else None
 
     async def get_user_by_username(self, username: str) -> dict | None:
         """Look up a user by their Telegram username."""
@@ -777,13 +781,14 @@ class Database:
 
     async def get_banned_users(self) -> list[BannedUserRow]:
         """Get all currently banned users, newest bans first."""
-        return await self._fetchall(
+        rows = await self._fetchall(
             "SELECT telegram_id, banned_by, reason, banned_at FROM banned_users ORDER BY banned_at DESC"
         )
+        return cast(list[BannedUserRow], rows)
 
     # --- Phase 9: Sighting Moderation ---
 
-    async def delete_sighting(self, sighting_id: str) -> dict | None:
+    async def delete_sighting(self, sighting_id: str) -> SightingRow | None:
         """Delete a sighting by ID. Returns the sighting data before deletion, or None."""
         sighting = await self.get_sighting(sighting_id)
         if not sighting:
@@ -868,14 +873,16 @@ class Database:
 
     async def get_config_override(self, key: str) -> ConfigOverrideRow | None:
         """Get a single runtime config override by key."""
-        return await self._fetchone(
+        row = await self._fetchone(
             f"SELECT key, value, updated_by, updated_at FROM config_overrides WHERE key = {self._ph(1)}",
             (key,),
         )
+        return cast(ConfigOverrideRow, row) if row else None
 
     async def get_all_config_overrides(self) -> list[ConfigOverrideRow]:
         """Get all runtime config overrides."""
-        return await self._fetchall("SELECT key, value, updated_by, updated_at FROM config_overrides ORDER BY key")
+        rows = await self._fetchall("SELECT key, value, updated_by, updated_at FROM config_overrides ORDER BY key")
+        return cast(list[ConfigOverrideRow], rows)
 
     async def upsert_config_override(self, key: str, value: str, updated_by: int, updated_at: datetime) -> None:
         """Insert or update a runtime config override."""
@@ -1000,9 +1007,7 @@ class Database:
             await conn.execute("DELETE FROM banned_users WHERE telegram_id = $1", user_id)
             await conn.execute("DELETE FROM user_rate_limits WHERE user_id = $1", user_id)
             await conn.execute("DELETE FROM users WHERE telegram_id = $1", user_id)
-            await conn.execute(
-                "UPDATE admin_actions SET target = NULL, detail = NULL WHERE target = $1", str(user_id)
-            )
+            await conn.execute("UPDATE admin_actions SET target = NULL, detail = NULL WHERE target = $1", str(user_id))
             return {"feedback_given_deleted": len(given_feedback)}
 
     async def export_stats(self, format_type: str = "csv") -> str:

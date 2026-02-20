@@ -48,14 +48,13 @@ def _build_start_keyboard() -> InlineKeyboardMarkup:
 
 def _build_back_button() -> InlineKeyboardMarkup:
     """Build a single '<< Back to Menu' button."""
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("\u00ab Back to Menu", callback_data="start_back")]]
-    )
+    return InlineKeyboardMarkup([[InlineKeyboardButton("\u00ab Back to Menu", callback_data="start_back")]])
 
 
 # ---------------------------------------------------------------------------
 # Text builders (reused by both /command and start menu callbacks)
 # ---------------------------------------------------------------------------
+
 
 async def _build_recent_text(user_id: int) -> str:
     """Build recent sightings text for a user. Returns the display string."""

@@ -64,9 +64,8 @@ def parse_callback_data(prefix: str, data: str) -> str | None:
     if not remainder:
         return None
     # Validate UUID for feedback/sighting callbacks
-    if prefix.startswith("feedback_"):
-        if not _UUID_RE.match(remainder):
-            return None
+    if prefix.startswith("feedback_") and not _UUID_RE.match(remainder):
+        return None
     return remainder
 
 

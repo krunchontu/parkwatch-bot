@@ -81,11 +81,10 @@ async def admin_user(update: Update, context: ContextTypes.DEFAULT_TYPE, args: s
     admin_id = update.effective_user.id
 
     # Try to look up by ID first, then by username
-    user = None
     if args.isdigit():
         user = await db.get_user_details(int(args))
     else:
-        user = await db.get_user_by_username(args)
+        user = await db.get_user_by_username(args)  # type: ignore[assignment]
 
     if not user:
         await update.message.reply_text(f"User not found: {args}")
