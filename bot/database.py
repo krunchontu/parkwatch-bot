@@ -11,6 +11,15 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from .models import (
+    AdminActionRow,
+    BannedUserRow,
+    ConfigOverrideRow,
+    SightingRow,
+    UserRow,
+    UserStatsRow,
+)
+
 logger = logging.getLogger(__name__)
 
 _db: Optional["Database"] = None
@@ -273,7 +282,7 @@ class Database:
                 (user_id, username),
             )
 
-    async def get_user_stats(self, user_id: int) -> dict | None:
+    async def get_user_stats(self, user_id: int) -> UserStatsRow | None:
         """Get user row (telegram_id, username, report_count)."""
         return await self._fetchone(
             f"SELECT telegram_id, username, report_count FROM users WHERE telegram_id = {self._ph(1)}", (user_id,)
@@ -374,7 +383,7 @@ class Database:
             (positive_delta, negative_delta, sighting_id),
         )
 
-    async def get_sighting(self, sighting_id: str) -> dict | None:
+    async def get_sighting(self, sighting_id: str) -> SightingRow | None:
         """Fetch a single sighting by ID."""
         return await self._fetchone(f"SELECT * FROM sightings WHERE id = {self._ph(1)}", (sighting_id,))
 
@@ -577,7 +586,7 @@ class Database:
             (admin_id, action, target, detail, datetime.now(timezone.utc)),
         )
 
-    async def get_admin_log(self, limit: int = 20) -> list[dict]:
+    async def get_admin_log(self, limit: int = 20) -> list[AdminActionRow]:
         """Get the most recent admin actions."""
         return await self._fetchall(
             f"SELECT * FROM admin_actions ORDER BY created_at DESC LIMIT {self._ph(1)}",
@@ -647,7 +656,7 @@ class Database:
 
     # --- Phase 8: Admin — User & Zone Lookup ---
 
-    async def get_user_details(self, user_id: int) -> dict | None:
+    async def get_user_details(self, user_id: int) -> UserRow | None:
         """Get detailed user information for admin lookup."""
         return await self._fetchone(
             f"SELECT telegram_id, username, report_count, created_at FROM users WHERE telegram_id = {self._ph(1)}",
@@ -766,7 +775,7 @@ class Database:
         )
         return row is not None
 
-    async def get_banned_users(self) -> list[dict]:
+    async def get_banned_users(self) -> list[BannedUserRow]:
         """Get all currently banned users, newest bans first."""
         return await self._fetchall(
             "SELECT telegram_id, banned_by, reason, banned_at FROM banned_users ORDER BY banned_at DESC"
@@ -857,14 +866,14 @@ class Database:
 
     # --- Phase 11: Runtime configuration ---
 
-    async def get_config_override(self, key: str) -> dict | None:
+    async def get_config_override(self, key: str) -> ConfigOverrideRow | None:
         """Get a single runtime config override by key."""
         return await self._fetchone(
             f"SELECT key, value, updated_by, updated_at FROM config_overrides WHERE key = {self._ph(1)}",
             (key,),
         )
 
-    async def get_all_config_overrides(self) -> list[dict]:
+    async def get_all_config_overrides(self) -> list[ConfigOverrideRow]:
         """Get all runtime config overrides."""
         return await self._fetchall("SELECT key, value, updated_by, updated_at FROM config_overrides ORDER BY key")
 
