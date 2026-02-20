@@ -12,6 +12,7 @@ from bot.utils import (
     get_accuracy_indicator,
     get_reporter_badge,
     haversine_meters,
+    parse_callback_data,
     sanitize_description,
 )
 from bot.zones import ZONE_COORDS, ZONES
@@ -305,6 +306,39 @@ class TestGenerateSightingId:
     def test_unique_ids(self):
         ids = {generate_sighting_id() for _ in range(100)}
         assert len(ids) == 100
+
+
+# ---------------------------------------------------------------------------
+# parse_callback_data
+# ---------------------------------------------------------------------------
+class TestParseCallbackData:
+    """Tests for callback data parsing and validation."""
+
+    def test_valid_feedback_positive(self):
+        uid = "a1b2c3d4-e5f6-4789-abcd-ef0123456789"
+        assert parse_callback_data("feedback_pos_", f"feedback_pos_{uid}") == uid
+
+    def test_valid_feedback_negative(self):
+        uid = "a1b2c3d4-e5f6-4789-abcd-ef0123456789"
+        assert parse_callback_data("feedback_neg_", f"feedback_neg_{uid}") == uid
+
+    def test_invalid_uuid_rejected(self):
+        assert parse_callback_data("feedback_pos_", "feedback_pos_not-a-uuid") is None
+
+    def test_empty_remainder_rejected(self):
+        assert parse_callback_data("feedback_pos_", "feedback_pos_") is None
+
+    def test_wrong_prefix_rejected(self):
+        assert parse_callback_data("feedback_pos_", "feedback_neg_abc") is None
+
+    def test_non_feedback_prefix_passes_without_uuid_check(self):
+        assert parse_callback_data("zone_", "zone_Bugis") == "Bugis"
+
+    def test_none_data_returns_none(self):
+        assert parse_callback_data("zone_", "") is None
+
+    def test_empty_string_returns_none(self):
+        assert parse_callback_data("zone_", "") is None
 
 
 # ---------------------------------------------------------------------------

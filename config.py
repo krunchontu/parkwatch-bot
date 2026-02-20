@@ -25,7 +25,7 @@ PORT = int(os.getenv("PORT", "8443"))
 
 # Health check endpoint (runs on a separate lightweight HTTP server)
 HEALTH_CHECK_ENABLED = os.getenv("HEALTH_CHECK_ENABLED", "true").lower() in ("true", "1", "yes")
-HEALTH_CHECK_PORT = int(os.getenv("HEALTH_CHECK_PORT", os.getenv("PORT", "8080")))
+HEALTH_CHECK_PORT = int(os.getenv("HEALTH_CHECK_PORT", "8080"))
 
 # Structured logging: "text" (human-readable, default) or "json" (for log aggregation)
 LOG_FORMAT = os.getenv("LOG_FORMAT", "text")
@@ -57,4 +57,4 @@ MAINTENANCE_MESSAGE = os.getenv(
 )
 
 # Bot version (for health check and Sentry release tracking)
-BOT_VERSION = "1.3.0"
+BOT_VERSION = "1.4.0"

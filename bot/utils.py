@@ -48,6 +48,27 @@ def generate_sighting_id():
     return str(uuid.uuid4())
 
 
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+
+
+def parse_callback_data(prefix: str, data: str) -> str | None:
+    """Strip *prefix* from callback *data* and return the remainder.
+
+    Returns ``None`` when *data* doesn't start with *prefix* or the
+    remainder is empty.  For sighting-related prefixes the remainder is
+    additionally validated as a UUID-4 string.
+    """
+    if not data or not data.startswith(prefix):
+        return None
+    remainder = data[len(prefix) :]
+    if not remainder:
+        return None
+    # Validate UUID for feedback/sighting callbacks
+    if prefix.startswith("feedback_") and not _UUID_RE.match(remainder):
+        return None
+    return remainder
+
+
 def sanitize_description(text):
     """Sanitize user-provided description text.
 

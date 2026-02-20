@@ -69,3 +69,20 @@
 - Rewrote `APP_REVIEW.md` with a fresh, judicious second-pass audit focused on documentation-code alignment, Good/Bad/Ugly framing, and benchmark comparison against world-class Telegram bots.
 - Added an explicit discrepancy register for `/start` behavior, feedback delivery semantics, and done-vs-planned documentation tone.
 - Added prioritized rewrite-first action list emphasizing truth-first docs, feedback delivery contract, fanout hardening, and observability baseline.
+
+## 2026-02-20 (Phase 11.5 Tech Debt & Hardening — full implementation)
+- **11.5.1 /start menu fix (Approach C):** Refactored `bot/handlers/user.py` with `_build_recent_text()`, `_build_mystats_text()`, `_build_help_text()` text builders, `_build_start_keyboard()`, `_build_back_button()` helpers, `handle_start_menu()` for edit-in-place with back button, `back_to_start_menu()` handler. Added `report_from_start()` in `bot/handlers/report.py` as ConversationHandler entry point. Updated `bot/main.py` with callback routing for start_back, start_report guard, and report_conv entry points.
+- **11.5.2 ban_check fix:** Updated `bot/services/moderation.py` `ban_check` decorator to handle both `update.message` and `update.callback_query` updates. Removed manual is_banned check from handle_start_menu.
+- **11.5.3 Rate limiting decoupled:** Created `alembic/versions/006_user_rate_limits.py` migration. Added `user_rate_limits` table to `create_tables()`, `record_rate_limit_event()` method, updated `count_user_feedback_since()` to query new table, updated `purge_user_data()` to clean new table.
+- **11.5.4 GDPR purge PII scrub:** Updated `bot/database.py` `purge_user_data()` to NULL both `target` AND `detail` columns in `admin_actions` (both SQLite and PostgreSQL paths).
+- **11.5.5 Callback validation:** Added `parse_callback_data()` with UUID regex validation to `bot/utils.py`. Applied to `handle_feedback` in `bot/handlers/report.py`.
+- **11.5.6 Health check port fix:** Changed `HEALTH_CHECK_PORT` in `config.py` to default to 8080 unconditionally (was falling back to PORT). Added startup warning in `bot/main.py` if port collision detected.
+- **11.5.7 Broadcast hardening:** Rewrote `bot/services/notifications.py` with `asyncio.Semaphore(20)` bounded concurrency, `_send_one()` helper with retry on TimedOut/OSError and RetryAfter handling, `broadcast_message()` for admin announcements. Updated `bot/handlers/admin/announce.py` to use `broadcast_message()`.
+- **11.5.8 main.py shim:** Verified already clean — no action needed.
+- **11.5.9 Typed data models:** Created `bot/models.py` with TypedDict definitions (UserRow, UserStatsRow, SubscriptionRow, SightingRow, FeedbackRow, AdminActionRow, BannedUserRow, ConfigOverrideRow, GlobalStatsRow, ZoneDetailRow). Added `cast()` annotations to key Database methods.
+- **11.5.10 Database split:** Deferred to separate PR (large refactor).
+- **11.5.11 Admin handler split:** Already done in Phase 10 — verified no action needed.
+- **11.5.12 Handler-level tests:** Created `tests/helpers.py` (make_update, make_callback_update, make_context, make_mock_db). Created `tests/test_handlers_user.py` (19 tests) and `tests/test_handlers_callbacks.py` (12 tests).
+- **11.5.13 SQLite cascade fix:** Removed manual feedback deletion from `cleanup_old_sightings()` in `bot/database.py` — relies on ON DELETE CASCADE. Added TestCascadeDelete test.
+- **11.5.14 CI validation:** All gates pass — ruff check, ruff format, mypy (0 errors, 27 files), pytest (335 passed). Fixed ruff lint (SIM102, F841), ruff format (3 files), mypy TypedDict cast errors (9 fixes).
+- **Documentation updates:** Refreshed `APP_REVIEW.md` (scores up: 6.2→7.1), updated `README.md` (v1.4.0, models.py, 6 migrations), updated `parking_warden_bot_spec.md` (user_rate_limits schema, new files), updated `IMPROVEMENTS.md` (all 11.5 items checked). Bumped `BOT_VERSION` to "1.4.0".

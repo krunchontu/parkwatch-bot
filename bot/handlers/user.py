@@ -1,9 +1,11 @@
 """User command handlers for ParkWatch SG."""
 
+import contextlib
 import logging
 from datetime import datetime, timedelta, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from config import ADMIN_USER_IDS
@@ -12,46 +14,199 @@ from ..database import get_db
 from ..formatting import DIVIDER
 from ..services.maintenance import maintenance_check
 from ..services.moderation import ban_check
+from ..services.runtime_settings import get_runtime_settings
 from ..ui.keyboards import build_zone_keyboard
 from ..utils import get_accuracy_indicator, get_reporter_badge
 from ..zones import ZONES
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Start menu keyboard and text constants
+# ---------------------------------------------------------------------------
 
-@maintenance_check
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command — show quick-action menu."""
-    keyboard = [
-        [InlineKeyboardButton("\U0001f4cd Subscribe to Zones", callback_data="start_subscribe")],
-        [InlineKeyboardButton("\U0001f6a8 Report a Sighting", callback_data="start_report")],
-        [InlineKeyboardButton("\U0001f4cb Recent Sightings", callback_data="start_recent")],
-        [InlineKeyboardButton("\U0001f4ca My Stats", callback_data="start_mystats")],
-        [InlineKeyboardButton("\U0001f4ac Send Feedback", callback_data="start_feedback")],
-        [InlineKeyboardButton("\u2753 Help", callback_data="start_help")],
-    ]
+_START_TEXT = (
+    "Welcome to ParkWatch SG! \U0001f697\n\n"
+    "I'll alert you when parking wardens are spotted nearby.\n\n"
+    "What would you like to do?"
+)
 
-    await update.message.reply_text(
-        "Welcome to ParkWatch SG! \U0001f697\n\n"
-        "I'll alert you when parking wardens are spotted nearby.\n\n"
-        "What would you like to do?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+
+def _build_start_keyboard() -> InlineKeyboardMarkup:
+    """Build the /start quick-action keyboard."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("\U0001f4cd Subscribe to Zones", callback_data="start_subscribe")],
+            [InlineKeyboardButton("\U0001f6a8 Report a Sighting", callback_data="start_report")],
+            [InlineKeyboardButton("\U0001f4cb Recent Sightings", callback_data="start_recent")],
+            [InlineKeyboardButton("\U0001f4ca My Stats", callback_data="start_mystats")],
+            [InlineKeyboardButton("\U0001f4ac Send Feedback", callback_data="start_feedback")],
+            [InlineKeyboardButton("\u2753 Help", callback_data="start_help")],
+        ]
+    )
+
+
+def _build_back_button() -> InlineKeyboardMarkup:
+    """Build a single '<< Back to Menu' button."""
+    return InlineKeyboardMarkup([[InlineKeyboardButton("\u00ab Back to Menu", callback_data="start_back")]])
+
+
+# ---------------------------------------------------------------------------
+# Text builders (reused by both /command and start menu callbacks)
+# ---------------------------------------------------------------------------
+
+
+async def _build_recent_text(user_id: int) -> str:
+    """Build recent sightings text for a user. Returns the display string."""
+    db = get_db()
+    user_zones = await db.get_subscriptions(user_id)
+
+    if not user_zones:
+        return "You're not subscribed to any zones yet.\nUse /start to select zones first."
+
+    sighting_expiry_minutes = await get_runtime_settings().get("SIGHTING_EXPIRY_MINUTES")
+    relevant = await db.get_recent_sightings_for_zones(user_zones, sighting_expiry_minutes)
+
+    if not relevant:
+        return (
+            f"\u2705 No recent warden sightings in your zones (last {sighting_expiry_minutes} mins).\n\n"
+            f"Your zones: {', '.join(sorted(user_zones))}"
+        )
+
+    msg = "\U0001f4cb Recent sightings in your zones:\n"
+    for s in relevant:
+        reported_at = s["reported_at"]
+        if reported_at.tzinfo is None:
+            reported_at = reported_at.replace(tzinfo=timezone.utc)
+        mins_ago = int((datetime.now(timezone.utc) - reported_at).total_seconds() / 60)
+
+        if mins_ago <= 5:
+            urgency = "\U0001f534"
+        elif mins_ago <= 15:
+            urgency = "\U0001f7e1"
+        else:
+            urgency = "\U0001f7e2"
+
+        msg += f"\n{urgency} {s['zone']} \u2014 {mins_ago} mins ago\n"
+        if s.get("description"):
+            msg += f"   \U0001f4dd {s['description']}\n"
+        if s.get("lat") and s.get("lng"):
+            msg += f"   \U0001f310 GPS: {s['lat']:.6f}, {s['lng']:.6f}\n"
+
+        reporter_id = s.get("reporter_id")
+        badge = s.get("reporter_badge", "\U0001f195 New")
+        accuracy_indicator = ""
+        if reporter_id:
+            acc_score, total_fb = await db.calculate_accuracy(reporter_id)
+            accuracy_indicator = get_accuracy_indicator(acc_score, total_fb)
+        msg += f"   \U0001f464 {badge}{(' ' + accuracy_indicator) if accuracy_indicator else ''}\n"
+
+        pos = s.get("feedback_positive", 0)
+        neg = s.get("feedback_negative", 0)
+        if pos > 0 or neg > 0:
+            msg += f"   \U0001f4ca Feedback: \U0001f44d {pos} / \U0001f44e {neg}\n"
+
+    # Truncate for Telegram message limit safety
+    if len(msg) > 3500:
+        msg = msg[:3500] + "\n\n... truncated"
+
+    return msg
+
+
+async def _build_mystats_text(user_id: int) -> str:
+    """Build reporter stats text for a user. Returns the display string."""
+    db = get_db()
+    stats = await db.get_user_stats(user_id)
+    if not stats or stats["report_count"] == 0:
+        return (
+            "\U0001f4ca *Your Reporter Stats*\n\n"
+            "You haven't reported any sightings yet.\n"
+            "Use /report when you spot a warden to get started!"
+        )
+
+    report_count = stats["report_count"]
+    accuracy_score, total_feedback = await db.calculate_accuracy(user_id)
+    badge = get_reporter_badge(report_count)
+    accuracy_indicator = get_accuracy_indicator(accuracy_score, total_feedback)
+    total_pos, total_neg = await db.get_user_feedback_totals(user_id)
+
+    msg = "\U0001f4ca *Your Reporter Stats*\n\n"
+    msg += f"\U0001f3c6 Badge: {badge}\n"
+    msg += f"\U0001f4dd Total reports: {report_count}\n"
+    msg += "\n*Accuracy Rating:*\n"
+    msg += f"\U0001f44d Positive: {total_pos}\n"
+    msg += f"\U0001f44e Negative: {total_neg}\n"
+
+    if total_feedback >= 3:
+        msg += f"\n\u2728 Accuracy score: {accuracy_score * 100:.0f}%"
+        if accuracy_indicator:
+            msg += f" {accuracy_indicator}"
+        msg += "\n"
+    else:
+        msg += f"\n_Need {3 - total_feedback} more ratings for accuracy score_\n"
+
+    msg += "\n*Badge Progression:*\n"
+    if report_count < 3:
+        msg += f"\U0001f4c8 {3 - report_count} more reports for \u2b50 Regular\n"
+    elif report_count < 11:
+        msg += f"\U0001f4c8 {11 - report_count} more reports for \u2b50\u2b50 Trusted\n"
+    elif report_count < 51:
+        msg += f"\U0001f4c8 {51 - report_count} more reports for \U0001f3c6 Veteran\n"
+    else:
+        msg += "\U0001f389 You've reached the highest badge!\n"
+
+    msg += "\n*Accuracy Indicators:*\n"
+    msg += "\u2705 80%+ \u2014 Highly reliable\n"
+    msg += "\u26a0\ufe0f 50-79% \u2014 Mixed accuracy\n"
+    msg += "\u274c <50% \u2014 Low accuracy\n"
+    return msg
+
+
+def _build_help_text() -> str:
+    """Build help text. Returns the display string."""
+    return (
+        "\U0001f697 *ParkWatch SG Commands*\n\n"
+        "*Getting Started:*\n"
+        "/start \u2014 Main menu with quick actions\n"
+        "/subscribe \u2014 Add more zones\n"
+        "/unsubscribe \u2014 Remove zones\n"
+        "/myzones \u2014 View your subscriptions\n\n"
+        "*Reporting & Alerts:*\n"
+        "/report \u2014 Report a warden sighting\n"
+        "/recent \u2014 See recent sightings (last 30 mins)\n\n"
+        "*Your Profile:*\n"
+        "/mystats \u2014 View your reporter stats & accuracy\n"
+        "/share \u2014 Invite friends to join\n"
+        "/feedback \u2014 Send feedback to the admins\n\n"
+        "/help \u2014 Show this message\n\n"
+        f"{DIVIDER}\n"
+        "\U0001f4a1 *Tips:*\n"
+        "\u2022 Spot a warden? Use /report to alert others!\n"
+        "\u2022 Rate alerts with \U0001f44d/\U0001f44e to build trust\n"
+        "\u2022 Share with friends \u2014 more users = better alerts!"
     )
 
 
 @maintenance_check
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /start command — show quick-action menu."""
+    await update.message.reply_text(_START_TEXT, reply_markup=_build_start_keyboard())
+
+
+@ban_check
+@maintenance_check
 async def handle_start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle quick-action button clicks from the /start menu."""
+    """Handle quick-action button clicks from the /start menu.
+
+    Read-only buttons (recent, mystats, help, feedback) edit the /start message
+    in-place with full content + a back button.  Subscribe opens the region
+    selection flow.  Report is handled separately by the ConversationHandler.
+    """
     query = update.callback_query
     await query.answer()
 
-    # Ban check for callback queries (ban_check decorator only works with update.message)
-    if await get_db().is_banned(update.effective_user.id):
-        await query.edit_message_text(
-            "Your account has been restricted due to policy violations.\nContact the bot administrator for appeals."
-        )
-        return
     action = query.data
+    user_id = update.effective_user.id
 
     if action == "start_subscribe":
         keyboard = [
@@ -61,36 +216,33 @@ async def handle_start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Which areas do you want alerts for?",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
-    elif action == "start_report":
-        await query.edit_message_text(
-            "\U0001f6a8 Use /report to report a warden sighting.\n\n"
-            "You can share your GPS location or select a zone manually."
-        )
     elif action == "start_recent":
-        await query.edit_message_text(
-            "\U0001f4cb Use /recent to see recent sightings in your zones.\n\n"
-            "Subscribe to zones first to get personalized results."
-        )
+        text = await _build_recent_text(user_id)
+        await query.edit_message_text(text, reply_markup=_build_back_button())
     elif action == "start_mystats":
-        await query.edit_message_text(
-            "\U0001f4ca Use /mystats to view your reporter stats and accuracy.\n\n"
-            "Start reporting sightings to build your profile!"
-        )
+        text = await _build_mystats_text(user_id)
+        await query.edit_message_text(text, reply_markup=_build_back_button(), parse_mode="Markdown")
     elif action == "start_feedback":
         await query.edit_message_text(
-            "\U0001f4ac Use /feedback <message> to send feedback to the admins.\n\n"
-            "Example: /feedback Love this bot! Could you add more zones?"
+            "\U0001f4ac *Send Feedback*\n\n"
+            "Type:\n`/feedback <your message>`\n\n"
+            "Example:\n`/feedback Love this bot! Could you add more zones?`\n\n"
+            "Your message will be relayed to the bot admins.",
+            reply_markup=_build_back_button(),
+            parse_mode="Markdown",
         )
     elif action == "start_help":
-        await query.edit_message_text(
-            "\u2753 Use /help to see all available commands.\n\n"
-            "Key commands:\n"
-            "\u2022 /start \u2014 Main menu\n"
-            "\u2022 /subscribe \u2014 Add alert zones\n"
-            "\u2022 /report \u2014 Report a warden\n"
-            "\u2022 /recent \u2014 Recent sightings\n"
-            "\u2022 /feedback \u2014 Send feedback"
-        )
+        text = _build_help_text()
+        await query.edit_message_text(text, reply_markup=_build_back_button(), parse_mode="Markdown")
+
+
+@maintenance_check
+async def back_to_start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle '<< Back to Menu' button — re-render the /start menu."""
+    query = update.callback_query
+    await query.answer()
+    with contextlib.suppress(BadRequest):
+        await query.edit_message_text(_START_TEXT, reply_markup=_build_start_keyboard())
 
 
 @maintenance_check
@@ -288,89 +440,15 @@ async def handle_unsubscribe_callback(update: Update, context: ContextTypes.DEFA
 @maintenance_check
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command."""
-    await update.message.reply_text(
-        "\U0001f697 *ParkWatch SG Commands*\n\n"
-        "*Getting Started:*\n"
-        "/start \u2014 Main menu with quick actions\n"
-        "/subscribe \u2014 Add more zones\n"
-        "/unsubscribe \u2014 Remove zones\n"
-        "/myzones \u2014 View your subscriptions\n\n"
-        "*Reporting & Alerts:*\n"
-        "/report \u2014 Report a warden sighting\n"
-        "/recent \u2014 See recent sightings (last 30 mins)\n\n"
-        "*Your Profile:*\n"
-        "/mystats \u2014 View your reporter stats & accuracy\n"
-        "/share \u2014 Invite friends to join\n"
-        "/feedback \u2014 Send feedback to the admins\n\n"
-        "/help \u2014 Show this message\n\n"
-        f"{DIVIDER}\n"
-        "\U0001f4a1 *Tips:*\n"
-        "\u2022 Spot a warden? Use /report to alert others!\n"
-        "\u2022 Rate alerts with \U0001f44d/\U0001f44e to build trust\n"
-        "\u2022 Share with friends \u2014 more users = better alerts!",
-        parse_mode="Markdown",
-    )
+    await update.message.reply_text(_build_help_text(), parse_mode="Markdown")
 
 
 @ban_check
 @maintenance_check
 async def mystats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /mystats command - show user's reporter stats."""
-    user_id = update.effective_user.id
-    db = get_db()
-
-    stats = await db.get_user_stats(user_id)
-    if not stats or stats["report_count"] == 0:
-        await update.message.reply_text(
-            "\U0001f4ca *Your Reporter Stats*\n\n"
-            "You haven't reported any sightings yet.\n"
-            "Use /report when you spot a warden to get started!",
-            parse_mode="Markdown",
-        )
-        return
-
-    report_count = stats["report_count"]
-    accuracy_score, total_feedback = await db.calculate_accuracy(user_id)
-
-    badge = get_reporter_badge(report_count)
-    accuracy_indicator = get_accuracy_indicator(accuracy_score, total_feedback)
-
-    # Calculate total feedback received on user's reports
-    total_pos, total_neg = await db.get_user_feedback_totals(user_id)
-
-    msg = "\U0001f4ca *Your Reporter Stats*\n\n"
-    msg += f"\U0001f3c6 Badge: {badge}\n"
-    msg += f"\U0001f4dd Total reports: {report_count}\n"
-    msg += "\n*Accuracy Rating:*\n"
-    msg += f"\U0001f44d Positive: {total_pos}\n"
-    msg += f"\U0001f44e Negative: {total_neg}\n"
-
-    if total_feedback >= 3:
-        msg += f"\n\u2728 Accuracy score: {accuracy_score * 100:.0f}%"
-        if accuracy_indicator:
-            msg += f" {accuracy_indicator}"
-        msg += "\n"
-    else:
-        msg += f"\n_Need {3 - total_feedback} more ratings for accuracy score_\n"
-
-    # Badge progression info
-    msg += "\n*Badge Progression:*\n"
-    if report_count < 3:
-        msg += f"\U0001f4c8 {3 - report_count} more reports for \u2b50 Regular\n"
-    elif report_count < 11:
-        msg += f"\U0001f4c8 {11 - report_count} more reports for \u2b50\u2b50 Trusted\n"
-    elif report_count < 51:
-        msg += f"\U0001f4c8 {51 - report_count} more reports for \U0001f3c6 Veteran\n"
-    else:
-        msg += "\U0001f389 You've reached the highest badge!\n"
-
-    # Accuracy legend
-    msg += "\n*Accuracy Indicators:*\n"
-    msg += "\u2705 80%+ \u2014 Highly reliable\n"
-    msg += "\u26a0\ufe0f 50-79% \u2014 Mixed accuracy\n"
-    msg += "\u274c <50% \u2014 Low accuracy\n"
-
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    text = await _build_mystats_text(update.effective_user.id)
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 
 @ban_check
@@ -487,9 +565,10 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Failed to relay feedback to admin {admin_id}: {e}")
 
-    # Log to audit trail
+    # Log to audit trail and rate limit table
     preview = message[:100] + ("..." if len(message) > 100 else "")
     await db.log_admin_action(user_id, "user_feedback", target=str(user_id), detail=preview)
+    await db.record_rate_limit_event(user_id, "user_feedback")
 
     # Confirm to user
     await update.message.reply_text(

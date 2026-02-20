@@ -50,8 +50,10 @@ from .handlers.report import (
     handle_report_zone,
     recent,
     report,
+    report_from_start,
 )
 from .handlers.user import (
+    back_to_start_menu,
     feedback_command,
     handle_back_to_regions,
     handle_region_selection,
@@ -78,11 +80,19 @@ logger = logging.getLogger(__name__)
 
 
 async def handle_callback(update: Update, context):
-    """Route all callback queries (non-report flows)."""
+    """Route all callback queries (non-report flows).
+
+    ``start_report`` is intentionally excluded — it is handled by the
+    ConversationHandler entry point (``report_from_start``).
+    """
     query = update.callback_query
     data = query.data
 
-    if data.startswith("start_"):
+    if data == "start_back":
+        await back_to_start_menu(update, context)
+    elif data == "start_report":
+        pass  # owned by ConversationHandler
+    elif data.startswith("start_"):
         await handle_start_menu(update, context)
     elif data.startswith("region_"):
         await handle_region_selection(update, context)
@@ -139,6 +149,13 @@ async def post_init(application):
     # Start health check server
     run_mode = "webhook" if WEBHOOK_URL else "polling"
     if HEALTH_CHECK_ENABLED:
+        if WEBHOOK_URL and HEALTH_CHECK_PORT == PORT:
+            logger.warning(
+                "HEALTH_CHECK_PORT (%d) is the same as webhook PORT (%d) — "
+                "this may cause a port collision. Set HEALTH_CHECK_PORT explicitly.",
+                HEALTH_CHECK_PORT,
+                PORT,
+            )
         await start_health_server(HEALTH_CHECK_PORT, run_mode=run_mode)
 
 
@@ -180,7 +197,11 @@ def main():
 
     # ConversationHandler for report flow
     report_conv = ConversationHandler(
-        entry_points=[CommandHandler("report", report)],
+        entry_points=[
+            CommandHandler("report", report),
+            CallbackQueryHandler(report_from_start, pattern="^start_report$"),
+        ],
+        allow_reentry=True,
         states={
             CHOOSING_METHOD: [
                 CallbackQueryHandler(handle_report_location_button, pattern="^report_location$"),

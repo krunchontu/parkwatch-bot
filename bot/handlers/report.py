@@ -25,6 +25,7 @@ from ..utils import (
     get_accuracy_indicator,
     get_reporter_badge,
     haversine_meters,
+    parse_callback_data,
     sanitize_description,
 )
 from ..zones import ZONE_COORDS, ZONES
@@ -48,20 +49,44 @@ def clear_pending_report(user_data: dict) -> None:
         user_data.pop(key, None)
 
 
+_REPORT_METHOD_TEXT = (
+    "\U0001f4cd Where did you spot the warden?\n\n"
+    "Share your location for the most accurate alert, "
+    "or select a zone manually."
+)
+
+_REPORT_METHOD_KEYBOARD = InlineKeyboardMarkup(
+    [
+        [InlineKeyboardButton("\U0001f4cd Share Location", callback_data="report_location")],
+        [InlineKeyboardButton("\U0001f4dd Select Zone Manually", callback_data="report_manual")],
+    ]
+)
+
+
 @ban_check
 @maintenance_conversation_check
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /report command."""
-    keyboard = [
-        [InlineKeyboardButton("\U0001f4cd Share Location", callback_data="report_location")],
-        [InlineKeyboardButton("\U0001f4dd Select Zone Manually", callback_data="report_manual")],
-    ]
+    await update.message.reply_text(_REPORT_METHOD_TEXT, reply_markup=_REPORT_METHOD_KEYBOARD)
+    return CHOOSING_METHOD
 
-    await update.message.reply_text(
-        "\U0001f4cd Where did you spot the warden?\n\n"
-        "Share your location for the most accurate alert, "
-        "or select a zone manually.",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+
+async def report_from_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle 'Report a Sighting' button from /start menu.
+
+    Deletes the /start message and sends the method-choice keyboard as a new
+    message, then enters the ConversationHandler at CHOOSING_METHOD.
+    """
+    query = update.callback_query
+    await query.answer()
+    # Delete the /start menu message to avoid stale buttons
+    with contextlib.suppress(Exception):
+        await query.message.delete()
+    # Send fresh method-choice message
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=_REPORT_METHOD_TEXT,
+        reply_markup=_REPORT_METHOD_KEYBOARD,
     )
     return CHOOSING_METHOD
 
@@ -414,9 +439,12 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     query = update.callback_query
     user_id = update.effective_user.id
 
-    # Extract sighting ID from callback data
-    data = query.data
-    sighting_id = data.replace("feedback_pos_", "").replace("feedback_neg_", "")
+    # Extract and validate sighting ID from callback data
+    prefix = "feedback_pos_" if is_positive else "feedback_neg_"
+    sighting_id = parse_callback_data(prefix, query.data)
+    if sighting_id is None:
+        await query.answer("Invalid action.", show_alert=True)
+        return
     db = get_db()
 
     # --- Self-rating prevention ---
@@ -509,79 +537,18 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
 @ban_check
 async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /recent command."""
+    from .user import _build_recent_text
+
     user_id = update.effective_user.id
-    db = get_db()
 
     try:
-        user_zones = await db.get_subscriptions(user_id)
+        text = await _build_recent_text(user_id)
     except Exception as e:
-        logger.error(f"DB error in /recent (get_subscriptions): {e}")
-        await update.message.reply_text("Sorry, something went wrong fetching your zones. Please try again.")
-        return
-
-    if not user_zones:
-        await update.message.reply_text("You're not subscribed to any zones yet.\nUse /start to select zones first.")
-        return
-
-    try:
-        sighting_expiry_minutes = await get_runtime_settings().get("SIGHTING_EXPIRY_MINUTES")
-        relevant = await db.get_recent_sightings_for_zones(user_zones, sighting_expiry_minutes)
-    except Exception as e:
-        logger.error(f"DB error in /recent (get_recent_sightings): {e}")
+        logger.error(f"DB error in /recent: {e}")
         await update.message.reply_text("Sorry, something went wrong fetching recent sightings. Please try again.")
         return
 
-    if not relevant:
-        await update.message.reply_text(
-            f"\u2705 No recent warden sightings in your zones (last {sighting_expiry_minutes} mins).\n\n"
-            f"Your zones: {', '.join(sorted(user_zones))}"
-        )
-        return
-
-    msg = "\U0001f4cb Recent sightings in your zones:\n"
-
-    for s in relevant:  # already sorted by reported_at DESC from DB
-        reported_at = s["reported_at"]
-        if reported_at.tzinfo is None:
-            reported_at = reported_at.replace(tzinfo=timezone.utc)
-        mins_ago = int((datetime.now(timezone.utc) - reported_at).total_seconds() / 60)
-
-        # Urgency indicator
-        if mins_ago <= 5:
-            urgency = "\U0001f534"
-        elif mins_ago <= 15:
-            urgency = "\U0001f7e1"
-        else:
-            urgency = "\U0001f7e2"
-
-        msg += f"\n{urgency} {s['zone']} \u2014 {mins_ago} mins ago\n"
-
-        if s.get("description"):
-            msg += f"   \U0001f4dd {s['description']}\n"
-
-        if s.get("lat") and s.get("lng"):
-            msg += f"   \U0001f310 GPS: {s['lat']:.6f}, {s['lng']:.6f}\n"
-
-        # Get reporter's current accuracy
-        reporter_id = s.get("reporter_id")
-        badge = s.get("reporter_badge", "\U0001f195 New")
-        accuracy_indicator = ""
-        if reporter_id:
-            acc_score, total_fb = await db.calculate_accuracy(reporter_id)
-            accuracy_indicator = get_accuracy_indicator(acc_score, total_fb)
-
-        if accuracy_indicator:
-            msg += f"   \U0001f464 {badge} {accuracy_indicator}\n"
-        else:
-            msg += f"   \U0001f464 {badge}\n"
-
-        # Feedback stats
-        pos = s.get("feedback_positive", 0)
-        neg = s.get("feedback_negative", 0)
-        if pos > 0 or neg > 0:
-            msg += f"   \U0001f4ca Feedback: \U0001f44d {pos} / \U0001f44e {neg}\n"
-
-    await update.message.reply_text(msg)
+    await update.message.reply_text(text)
 
 
 @maintenance_conversation_check

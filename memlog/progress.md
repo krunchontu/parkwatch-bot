@@ -69,6 +69,31 @@ Blockers:
 - None for documentation/review deliverable.
 
 [UPDATE]
+Phase: 3.0
+Completed:
+- Implemented Phase 11.5 (Tech Debt & Hardening) — 12 of 14 items completed, 2 deferred.
+- 11.5.1: Fixed /start menu buttons with Approach C (edit-in-place + back navigation + ConversationHandler entry for report).
+- 11.5.2: Fixed ban_check decorator to handle both message and callback_query updates.
+- 11.5.3: Decoupled feedback rate limiting from audit log via new user_rate_limits table (Alembic migration 006).
+- 11.5.4: Fixed GDPR purge to scrub PII from admin_actions.detail column.
+- 11.5.5: Added parse_callback_data() with UUID validation for defensive callback parsing.
+- 11.5.6: Fixed health check port collision — HEALTH_CHECK_PORT defaults to 8080 unconditionally.
+- 11.5.7: Refactored broadcast with bounded concurrency (semaphore=20), retry, RetryAfter handling.
+- 11.5.8: Verified main.py re-export shim already clean — no action needed.
+- 11.5.9: Introduced TypedDict data models (bot/models.py) with cast() annotations on DB methods.
+- 11.5.12: Added 31 handler-level tests across test_handlers_user.py and test_handlers_callbacks.py.
+- 11.5.13: Fixed SQLite cleanup cascade — removed manual feedback deletion, relies on ON DELETE CASCADE.
+- 11.5.14: All CI gates pass — ruff check, ruff format, mypy (0 errors), pytest (335 tests).
+- Deferred 11.5.10 (database module split) and 11.5.11 (admin handler split, already done).
+- Updated all documentation: IMPROVEMENTS.md, APP_REVIEW.md, README.md, parking_warden_bot_spec.md.
+- Bumped BOT_VERSION to 1.4.0.
+Next Steps:
+1. Proceed to Phase 12 growth features or address remaining APP_REVIEW feedback items.
+2. Consider observability baseline (metrics/SLOs) before major feature additions.
+Blockers:
+- None.
+
+[UPDATE]
 Phase: 2.3
 Completed:
 - Applied docs-only fixes requested: removed stale hardcoded test metrics/pass-rate snapshots and aligned `/start` wording to current menu-first UX in README/spec.

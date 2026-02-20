@@ -9,7 +9,16 @@ import io
 import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, cast
+
+from .models import (
+    AdminActionRow,
+    BannedUserRow,
+    ConfigOverrideRow,
+    SightingRow,
+    UserRow,
+    UserStatsRow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +200,14 @@ class Database:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
             "CREATE INDEX IF NOT EXISTS idx_config_overrides_updated_at ON config_overrides (updated_at)",
+            # Phase 11.5: Decoupled rate limiting (independent of admin_actions)
+            """CREATE TABLE IF NOT EXISTS user_rate_limits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id BIGINT NOT NULL,
+                action TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_user_rate_limits_lookup ON user_rate_limits (user_id, action, created_at)",
         ]
         if self.driver == "postgresql":
             # PostgreSQL uses SERIAL instead of AUTOINCREMENT
@@ -265,11 +282,12 @@ class Database:
                 (user_id, username),
             )
 
-    async def get_user_stats(self, user_id: int) -> dict | None:
+    async def get_user_stats(self, user_id: int) -> UserStatsRow | None:
         """Get user row (telegram_id, username, report_count)."""
-        return await self._fetchone(
+        row = await self._fetchone(
             f"SELECT telegram_id, username, report_count FROM users WHERE telegram_id = {self._ph(1)}", (user_id,)
         )
+        return cast(UserStatsRow, row) if row else None
 
     async def increment_report_count(self, user_id: int) -> int:
         """Increment report_count and return new value."""
@@ -366,9 +384,10 @@ class Database:
             (positive_delta, negative_delta, sighting_id),
         )
 
-    async def get_sighting(self, sighting_id: str) -> dict | None:
+    async def get_sighting(self, sighting_id: str) -> SightingRow | None:
         """Fetch a single sighting by ID."""
-        return await self._fetchone(f"SELECT * FROM sightings WHERE id = {self._ph(1)}", (sighting_id,))
+        row = await self._fetchone(f"SELECT * FROM sightings WHERE id = {self._ph(1)}", (sighting_id,))
+        return cast(SightingRow, row) if row else None
 
     async def get_sighting_reporter(self, sighting_id: str) -> int | None:
         """Get reporter_id for a sighting (for self-rating prevention)."""
@@ -381,25 +400,19 @@ class Database:
         return row["cnt"] if row else 0
 
     async def cleanup_old_sightings(self, retention_days: int) -> int:
-        """Delete sightings older than retention_days. Returns count deleted."""
+        """Delete sightings older than retention_days. Returns count deleted.
+
+        Relies on ON DELETE CASCADE to clean up associated feedback rows.
+        """
         cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
         if self.driver == "sqlite":
-            # Delete related feedback first
-            await self._conn.execute(
-                "DELETE FROM feedback WHERE sighting_id IN (SELECT id FROM sightings WHERE reported_at < ?)", (cutoff,)
-            )
             cursor = await self._conn.execute("DELETE FROM sightings WHERE reported_at < ?", (cutoff,))
             count = cursor.rowcount
             await self._conn.commit()
             return count
         else:
             async with self._pool.acquire() as conn, conn.transaction():
-                await conn.execute(
-                    "DELETE FROM feedback WHERE sighting_id IN (SELECT id FROM sightings WHERE reported_at < $1)",
-                    cutoff,
-                )
                 result = await conn.execute("DELETE FROM sightings WHERE reported_at < $1", cutoff)
-                # asyncpg returns status string like "DELETE 42"
                 try:
                     return int(result.split()[-1])
                 except (ValueError, IndexError):
@@ -575,12 +588,13 @@ class Database:
             (admin_id, action, target, detail, datetime.now(timezone.utc)),
         )
 
-    async def get_admin_log(self, limit: int = 20) -> list[dict]:
+    async def get_admin_log(self, limit: int = 20) -> list[AdminActionRow]:
         """Get the most recent admin actions."""
-        return await self._fetchall(
+        rows = await self._fetchall(
             f"SELECT * FROM admin_actions ORDER BY created_at DESC LIMIT {self._ph(1)}",
             (limit,),
         )
+        return cast(list[AdminActionRow], rows)
 
     # --- Phase 8: Admin — Global Statistics ---
 
@@ -645,12 +659,13 @@ class Database:
 
     # --- Phase 8: Admin — User & Zone Lookup ---
 
-    async def get_user_details(self, user_id: int) -> dict | None:
+    async def get_user_details(self, user_id: int) -> UserRow | None:
         """Get detailed user information for admin lookup."""
-        return await self._fetchone(
+        row = await self._fetchone(
             f"SELECT telegram_id, username, report_count, created_at FROM users WHERE telegram_id = {self._ph(1)}",
             (user_id,),
         )
+        return cast(UserRow, row) if row else None
 
     async def get_user_by_username(self, username: str) -> dict | None:
         """Look up a user by their Telegram username."""
@@ -764,15 +779,16 @@ class Database:
         )
         return row is not None
 
-    async def get_banned_users(self) -> list[dict]:
+    async def get_banned_users(self) -> list[BannedUserRow]:
         """Get all currently banned users, newest bans first."""
-        return await self._fetchall(
+        rows = await self._fetchall(
             "SELECT telegram_id, banned_by, reason, banned_at FROM banned_users ORDER BY banned_at DESC"
         )
+        return cast(list[BannedUserRow], rows)
 
     # --- Phase 9: Sighting Moderation ---
 
-    async def delete_sighting(self, sighting_id: str) -> dict | None:
+    async def delete_sighting(self, sighting_id: str) -> SightingRow | None:
         """Delete a sighting by ID. Returns the sighting data before deletion, or None."""
         sighting = await self.get_sighting(sighting_id)
         if not sighting:
@@ -855,16 +871,18 @@ class Database:
 
     # --- Phase 11: Runtime configuration ---
 
-    async def get_config_override(self, key: str) -> dict | None:
+    async def get_config_override(self, key: str) -> ConfigOverrideRow | None:
         """Get a single runtime config override by key."""
-        return await self._fetchone(
+        row = await self._fetchone(
             f"SELECT key, value, updated_by, updated_at FROM config_overrides WHERE key = {self._ph(1)}",
             (key,),
         )
+        return cast(ConfigOverrideRow, row) if row else None
 
-    async def get_all_config_overrides(self) -> list[dict]:
+    async def get_all_config_overrides(self) -> list[ConfigOverrideRow]:
         """Get all runtime config overrides."""
-        return await self._fetchall("SELECT key, value, updated_by, updated_at FROM config_overrides ORDER BY key")
+        rows = await self._fetchall("SELECT key, value, updated_by, updated_at FROM config_overrides ORDER BY key")
+        return cast(list[ConfigOverrideRow], rows)
 
     async def upsert_config_override(self, key: str, value: str, updated_by: int, updated_at: datetime) -> None:
         """Insert or update a runtime config override."""
@@ -953,8 +971,11 @@ class Database:
                 await conn.execute("DELETE FROM sightings WHERE reporter_id = ?", (user_id,))
                 await conn.execute("DELETE FROM subscriptions WHERE telegram_id = ?", (user_id,))
                 await conn.execute("DELETE FROM banned_users WHERE telegram_id = ?", (user_id,))
+                await conn.execute("DELETE FROM user_rate_limits WHERE user_id = ?", (user_id,))
                 await conn.execute("DELETE FROM users WHERE telegram_id = ?", (user_id,))
-                await conn.execute("UPDATE admin_actions SET target = NULL WHERE target = ?", (str(user_id),))
+                await conn.execute(
+                    "UPDATE admin_actions SET target = NULL, detail = NULL WHERE target = ?", (str(user_id),)
+                )
                 await conn.commit()
                 return {"feedback_given_deleted": len(given_feedback)}
             except Exception:
@@ -984,8 +1005,9 @@ class Database:
             await conn.execute("DELETE FROM sightings WHERE reporter_id = $1", user_id)
             await conn.execute("DELETE FROM subscriptions WHERE telegram_id = $1", user_id)
             await conn.execute("DELETE FROM banned_users WHERE telegram_id = $1", user_id)
+            await conn.execute("DELETE FROM user_rate_limits WHERE user_id = $1", user_id)
             await conn.execute("DELETE FROM users WHERE telegram_id = $1", user_id)
-            await conn.execute("UPDATE admin_actions SET target = NULL WHERE target = $1", str(user_id))
+            await conn.execute("UPDATE admin_actions SET target = NULL, detail = NULL WHERE target = $1", str(user_id))
             return {"feedback_given_deleted": len(given_feedback)}
 
     async def export_stats(self, format_type: str = "csv") -> str:
@@ -1023,11 +1045,22 @@ class Database:
         rows = await self._fetchall("SELECT telegram_id FROM users")
         return [r["telegram_id"] for r in rows]
 
+    async def record_rate_limit_event(self, user_id: int, action: str) -> None:
+        """Record a rate-limited action for the given user."""
+        ph = self._ph
+        await self._execute(
+            f"INSERT INTO user_rate_limits (user_id, action, created_at) VALUES ({ph(1)}, {ph(2)}, {ph(3)})",
+            (user_id, action, datetime.now(timezone.utc)),
+        )
+
     async def count_user_feedback_since(self, user_id: int, since: datetime) -> int:
-        """Count feedback messages sent by a user since a given time (for rate limiting)."""
+        """Count feedback messages sent by a user since a given time (for rate limiting).
+
+        Uses the dedicated user_rate_limits table (decoupled from audit log).
+        """
         row = await self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM admin_actions "
-            f"WHERE action = 'user_feedback' AND target = {self._ph(1)} AND created_at > {self._ph(2)}",
-            (str(user_id), since),
+            f"SELECT COUNT(*) AS cnt FROM user_rate_limits "
+            f"WHERE user_id = {self._ph(1)} AND action = 'user_feedback' AND created_at > {self._ph(2)}",
+            (user_id, since),
         )
         return row["cnt"] if row else 0

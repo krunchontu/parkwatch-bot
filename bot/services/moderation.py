@@ -10,9 +10,13 @@ from ..database import get_db
 logger = logging.getLogger(__name__)
 
 
-def ban_check(func):
-    """Decorator that blocks banned users from using a command.
+_BAN_MESSAGE = "Your account has been restricted due to policy violations.\nContact the bot administrator for appeals."
 
+
+def ban_check(func):
+    """Decorator that blocks banned users from using a command or callback.
+
+    Handles both message-based and callback-query-based updates.
     Banned users receive a static restriction message. Does NOT apply to /start.
     """
 
@@ -20,9 +24,10 @@ def ban_check(func):
         user_id = update.effective_user.id
         db = get_db()
         if await db.is_banned(user_id):
-            await update.message.reply_text(
-                "Your account has been restricted due to policy violations.\nContact the bot administrator for appeals."
-            )
+            if update.message is not None:
+                await update.message.reply_text(_BAN_MESSAGE)
+            elif update.callback_query is not None:
+                await update.callback_query.answer(_BAN_MESSAGE, show_alert=True)
             return
         return await func(update, context)
 
