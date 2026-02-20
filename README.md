@@ -42,7 +42,7 @@ python -m bot.main
 
 You should see:
 ```
-2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.3.0 starting in polling mode
+2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.4.0 starting in polling mode
 2026-XX-XX XX:XX:XX - bot.health - INFO - Health check server started on port 8080 (GET /health)
 ```
 
@@ -122,7 +122,7 @@ For detailed user flows, message formats, reputation rules, and zone lists, see 
 | `WEBHOOK_URL` | Public URL for webhook mode (omit for polling) | No | — |
 | `PORT` | Webhook listener port | No | `8443` |
 | `HEALTH_CHECK_ENABLED` | Enable the health check HTTP server | No | `true` |
-| `HEALTH_CHECK_PORT` | Health check server port | No | `$PORT` or `8080` |
+| `HEALTH_CHECK_PORT` | Health check server port | No | `8080` |
 | `LOG_FORMAT` | `text` (human-readable) or `json` (structured) | No | `text` |
 | `SENTRY_DSN` | Sentry error tracking DSN | No | — |
 | `ADMIN_USER_IDS` | Comma-separated admin Telegram user IDs | No | `""` |
@@ -138,7 +138,7 @@ For detailed user flows, message formats, reputation rules, and zone lists, see 
 | `MAX_REPORTS_PER_HOUR` | 3 | Rate limit per user |
 | `DUPLICATE_WINDOW_MINUTES` | 5 | Time window for duplicate detection |
 | `DUPLICATE_RADIUS_METERS` | 200 | GPS radius for duplicate detection (Haversine) |
-| `BOT_VERSION` | 1.3.0 | Version reported in health check & Sentry |
+| `BOT_VERSION` | 1.4.0 | Version reported in health check & Sentry |
 
 ---
 
@@ -152,6 +152,7 @@ parkwatch-bot/
 │   ├── main.py                  # Application wiring, handler registration, entrypoint
 │   ├── database.py              # Dual-driver DB abstraction (SQLite/PostgreSQL)
 │   ├── zones.py                 # Zone data (80 zones, 6 regions, coordinates)
+│   ├── models.py                # TypedDict data models for DB return types
 │   ├── utils.py                 # Pure helpers (haversine, badges, sanitization)
 │   ├── handlers/
 │   │   ├── user.py              # User commands (/start, /subscribe, /help, etc.)
@@ -168,7 +169,7 @@ parkwatch-bot/
 │   ├── health.py                # Health check HTTP server (GET /health)
 │   └── logging_config.py        # Structured logging (text/JSON modes)
 ├── tests/                       # pytest suite (unit, integration, infrastructure, admin, moderation, UX)
-├── alembic/                     # Database migration scripts (4 migrations)
+├── alembic/                     # Database migration scripts (6 migrations)
 ├── config.py                    # Environment configuration
 ├── pyproject.toml               # Project metadata, deps, tool configs
 ├── requirements.txt             # Runtime dependencies
@@ -216,7 +217,7 @@ GitHub Actions runs on every push/PR to `master`: lint → type check → test (
 A lightweight HTTP server runs alongside the bot (enabled by default) and responds to `GET /health`:
 
 ```json
-{"status": "ok", "version": "1.3.0", "mode": "polling", "timestamp": "2026-02-13T12:00:00+00:00"}
+{"status": "ok", "version": "1.4.0", "mode": "polling", "timestamp": "2026-02-13T12:00:00+00:00"}
 ```
 
 ### Structured Logging

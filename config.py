@@ -57,4 +57,4 @@ MAINTENANCE_MESSAGE = os.getenv(
 )
 
 # Bot version (for health check and Sentry release tracking)
-BOT_VERSION = "1.3.0"
+BOT_VERSION = "1.4.0"

@@ -570,7 +570,7 @@ Set `WEBHOOK_URL` to enable webhook mode. Structured JSON logging available via 
 
 ### Database Schema
 
-Data is stored in 7 tables with 6 indexes. Tables are created automatically on startup via `bot/database.py`. Schema changes are tracked via Alembic migrations in `alembic/versions/`.
+Data is stored in 8 tables with 7 indexes. Tables are created automatically on startup via `bot/database.py`. Schema changes are tracked via Alembic migrations in `alembic/versions/`.
 
 ```sql
 -- User accounts, report counts, and warning tracking
@@ -598,6 +598,9 @@ banned_users (telegram_id BIGINT PK, banned_by BIGINT, reason TEXT, banned_at TI
 
 -- Runtime configuration overrides (Phase 11)
 config_overrides (key TEXT PK, value TEXT NOT NULL, updated_by BIGINT NOT NULL, updated_at TIMESTAMP)
+
+-- Rate limit tracking (Phase 11.5 — decoupled from admin_actions)
+user_rate_limits (id INTEGER PK AUTOINCREMENT, user_id BIGINT, action TEXT, created_at TIMESTAMP)
 ```
 
 The database driver is selected automatically based on `DATABASE_URL`:
@@ -758,12 +761,13 @@ The database driver is selected automatically based on `DATABASE_URL`:
 | `bot/main.py` | Application wiring, handler registration, lifecycle hooks, entrypoint |
 | `bot/database.py` | Dual-driver database abstraction incl. admin + moderation + Phase 10 queries (SQLite/PostgreSQL) |
 | `bot/zones.py` | Zone data: `ZONES` dict (80 zones, 6 regions), `ZONE_COORDS` coordinate table |
-| `bot/utils.py` | Pure helpers: haversine, badges, accuracy, sanitization |
+| `bot/utils.py` | Pure helpers: haversine, badges, accuracy, sanitization, callback parsing |
 | `bot/handlers/user.py` | User commands: `/start`, `/subscribe`, `/unsubscribe`, `/myzones`, `/help`, `/mystats`, `/share`, `/feedback` |
 | `bot/handlers/report.py` | Report flow: 6-state ConversationHandler, feedback handler, `/recent` |
 | `bot/handlers/admin.py` | Admin system: `admin_only` decorator, `/admin` router, all subcommands incl. announce |
-| `bot/services/notifications.py` | Alert broadcast with blocked-user cleanup |
-| `bot/services/moderation.py` | `ban_check` decorator, `_check_auto_flag()` |
+| `bot/models.py` | TypedDict data models for DB row types |
+| `bot/services/notifications.py` | Alert broadcast with bounded concurrency + retry |
+| `bot/services/moderation.py` | `ban_check` decorator (message + callback), `_check_auto_flag()` |
 | `bot/services/maintenance.py` | Maintenance-mode gating utilities and decorators |
 | `bot/services/runtime_settings.py` | DB-backed runtime config access with typed casting |
 | `bot/ui/keyboards.py` | Keyboard builders: `build_zone_keyboard()` |
@@ -780,6 +784,8 @@ The database driver is selected automatically based on `DATABASE_URL`:
 | `alembic/versions/002_admin_actions_table.py` | Phase 8 migration: admin_actions audit log table |
 | `alembic/versions/003_phase9_user_management.py` | Phase 9 migration: banned_users table, flagged/warnings columns |
 | `alembic/versions/004_phase11_config_overrides.py` | Phase 11 migration: runtime config overrides table |
+| `alembic/versions/005_add_first_name.py` | Migration: add first_name column to users |
+| `alembic/versions/006_user_rate_limits.py` | Phase 11.5 migration: decoupled rate limit tracking table |
 | `tests/conftest.py` | Shared test fixtures (fresh SQLite DB per test) |
 | `tests/test_unit.py` | Unit tests for pure functions |
 | `tests/test_database.py` | Database integration tests |
@@ -791,6 +797,9 @@ The database driver is selected automatically based on `DATABASE_URL`:
 | `tests/test_phase11_maintenance.py` | Phase 11 tests: maintenance mode |
 | `tests/test_phase11_data_management.py` | Phase 11 tests: purge & export |
 | `tests/test_phase11_migration.py` | Phase 11 tests: Alembic migration |
+| `tests/helpers.py` | Shared test helpers: mock Telegram update/context/db factories |
+| `tests/test_handlers_user.py` | Handler tests: user commands, start menu, text builders |
+| `tests/test_handlers_callbacks.py` | Handler tests: callback routing, report entry, feedback validation |
 | `.github/workflows/ci.yml` | GitHub Actions CI pipeline (lint + typecheck + test) |
 | `.env.example` | Environment variable template (including Phase 9 vars) |
 | `Procfile` | Heroku-style process declaration |
@@ -802,4 +811,4 @@ The database driver is selected automatically based on `DATABASE_URL`:
 
 ---
 
-*Last updated: February 2026 (Phase 11 complete; roadmap aligned through Phase 14 — see IMPROVEMENTS.md)*
+*Last updated: February 2026 (Phase 11 + 11.5 complete; roadmap aligned through Phase 14 — see IMPROVEMENTS.md)*
