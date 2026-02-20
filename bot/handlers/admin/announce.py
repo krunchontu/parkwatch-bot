@@ -1,15 +1,14 @@
 """Admin announcement handler."""
 
-import asyncio
 import contextlib
 import logging
 
 from telegram import Update
-from telegram.error import Forbidden
 from telegram.ext import ContextTypes
 
 from ...database import get_db
 from ...formatting import DIVIDER
+from ...services.notifications import broadcast_message
 from ...zones import ZONES
 
 logger = logging.getLogger(__name__)
@@ -44,25 +43,9 @@ async def admin_announce(update: Update, context: ContextTypes.DEFAULT_TYPE, arg
         recipients = pending["recipients"]
         scope = pending["scope"]
 
-        sent = 0
-        failed = 0
-        blocked = []
+        sent, failed, blocked = await broadcast_message(context.bot, recipients, message)
 
-        for uid in recipients:
-            try:
-                await context.bot.send_message(chat_id=uid, text=message)
-                sent += 1
-            except Forbidden:
-                blocked.append(uid)
-                failed += 1
-            except Exception:
-                failed += 1
-
-            # Rate limit: ~20 messages/second
-            if (sent + failed) % 20 == 0:
-                await asyncio.sleep(1)
-
-        # Clean up blocked users
+        # Clean up blocked users' subscriptions
         for uid in blocked:
             with contextlib.suppress(Exception):
                 await db.clear_subscriptions(uid)
