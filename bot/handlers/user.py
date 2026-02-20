@@ -130,6 +130,8 @@ async def handle_zone_selection(update: Update, context: ContextTypes.DEFAULT_TY
         await db.remove_subscription(user_id, zone_name)
         await query.answer(f"\u274c Unsubscribed from {zone_name}")
     else:
+        username = update.effective_user.username or update.effective_user.first_name or "Unknown"
+        await db.ensure_user(user_id, username)
         await db.add_subscription(user_id, zone_name)
         await query.answer(f"\u2705 Subscribed to {zone_name}")
 
