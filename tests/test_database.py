@@ -599,3 +599,45 @@ class TestDatabaseInit:
         db = Database("postgresql://localhost/test")
         assert db._ph(1) == "$1"
         assert db._ph(2) == "$2"
+
+
+# ---------------------------------------------------------------------------
+# Cascade delete verification
+# ---------------------------------------------------------------------------
+class TestCascadeDelete:
+    """Verify ON DELETE CASCADE works for feedback when sightings are deleted."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_cascades_feedback(self, db):
+        """Deleting old sightings should cascade-delete associated feedback."""
+        now = datetime.now(timezone.utc)
+        await db.ensure_user(1, "reporter")
+        await db.ensure_user(2, "voter")
+        await db.add_sighting(
+            {
+                "id": "cascade_s1",
+                "zone": "Bugis",
+                "description": None,
+                "time": now - timedelta(days=60),
+                "reporter_id": 1,
+                "reporter_name": "reporter",
+                "reporter_badge": "New",
+                "lat": None,
+                "lng": None,
+            }
+        )
+        await db.apply_feedback("cascade_s1", 2, "positive")
+
+        # Verify feedback exists
+        fb = await db.get_user_feedback("cascade_s1", 2)
+        assert fb == "positive"
+
+        # Cleanup deletes the sighting
+        deleted = await db.cleanup_old_sightings(retention_days=30)
+        assert deleted == 1
+
+        # Sighting gone
+        assert await db.get_sighting("cascade_s1") is None
+        # Feedback should be cascade-deleted too
+        fb_after = await db.get_user_feedback("cascade_s1", 2)
+        assert fb_after is None

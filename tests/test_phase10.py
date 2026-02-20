@@ -580,7 +580,10 @@ class TestStartMenu:
 
         mock_db = MagicMock()
         mock_db.is_banned = AsyncMock(return_value=False)
-        with patch("bot.handlers.user.get_db", return_value=mock_db):
+        with (
+            patch("bot.services.moderation.get_db", return_value=mock_db),
+            patch("bot.handlers.user.get_db", return_value=mock_db),
+        ):
             asyncio.get_event_loop().run_until_complete(handle_start_menu(update, MagicMock()))
 
         update.callback_query.answer.assert_called_once()
@@ -603,7 +606,10 @@ class TestStartMenu:
 
         mock_db = MagicMock()
         mock_db.is_banned = AsyncMock(return_value=False)
-        with patch("bot.handlers.user.get_db", return_value=mock_db):
+        with (
+            patch("bot.services.moderation.get_db", return_value=mock_db),
+            patch("bot.handlers.user.get_db", return_value=mock_db),
+        ):
             asyncio.get_event_loop().run_until_complete(handle_start_menu(update, MagicMock()))
 
         text = update.callback_query.edit_message_text.call_args[0][0]
@@ -620,7 +626,10 @@ class TestStartMenu:
 
         mock_db = MagicMock()
         mock_db.is_banned = AsyncMock(return_value=False)
-        with patch("bot.handlers.user.get_db", return_value=mock_db):
+        with (
+            patch("bot.services.moderation.get_db", return_value=mock_db),
+            patch("bot.handlers.user.get_db", return_value=mock_db),
+        ):
             asyncio.get_event_loop().run_until_complete(handle_start_menu(update, MagicMock()))
 
         text = update.callback_query.edit_message_text.call_args[0][0]
@@ -637,7 +646,10 @@ class TestStartMenu:
 
         mock_db = MagicMock()
         mock_db.is_banned = AsyncMock(return_value=False)
-        with patch("bot.handlers.user.get_db", return_value=mock_db):
+        with (
+            patch("bot.services.moderation.get_db", return_value=mock_db),
+            patch("bot.handlers.user.get_db", return_value=mock_db),
+        ):
             asyncio.get_event_loop().run_until_complete(handle_start_menu(update, MagicMock()))
 
         text = update.callback_query.edit_message_text.call_args[0][0]

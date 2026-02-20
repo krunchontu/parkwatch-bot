@@ -381,25 +381,19 @@ class Database:
         return row["cnt"] if row else 0
 
     async def cleanup_old_sightings(self, retention_days: int) -> int:
-        """Delete sightings older than retention_days. Returns count deleted."""
+        """Delete sightings older than retention_days. Returns count deleted.
+
+        Relies on ON DELETE CASCADE to clean up associated feedback rows.
+        """
         cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
         if self.driver == "sqlite":
-            # Delete related feedback first
-            await self._conn.execute(
-                "DELETE FROM feedback WHERE sighting_id IN (SELECT id FROM sightings WHERE reported_at < ?)", (cutoff,)
-            )
             cursor = await self._conn.execute("DELETE FROM sightings WHERE reported_at < ?", (cutoff,))
             count = cursor.rowcount
             await self._conn.commit()
             return count
         else:
             async with self._pool.acquire() as conn, conn.transaction():
-                await conn.execute(
-                    "DELETE FROM feedback WHERE sighting_id IN (SELECT id FROM sightings WHERE reported_at < $1)",
-                    cutoff,
-                )
                 result = await conn.execute("DELETE FROM sightings WHERE reported_at < $1", cutoff)
-                # asyncpg returns status string like "DELETE 42"
                 try:
                     return int(result.split()[-1])
                 except (ValueError, IndexError):
@@ -954,7 +948,9 @@ class Database:
                 await conn.execute("DELETE FROM subscriptions WHERE telegram_id = ?", (user_id,))
                 await conn.execute("DELETE FROM banned_users WHERE telegram_id = ?", (user_id,))
                 await conn.execute("DELETE FROM users WHERE telegram_id = ?", (user_id,))
-                await conn.execute("UPDATE admin_actions SET target = NULL WHERE target = ?", (str(user_id),))
+                await conn.execute(
+                    "UPDATE admin_actions SET target = NULL, detail = NULL WHERE target = ?", (str(user_id),)
+                )
                 await conn.commit()
                 return {"feedback_given_deleted": len(given_feedback)}
             except Exception:
@@ -985,7 +981,9 @@ class Database:
             await conn.execute("DELETE FROM subscriptions WHERE telegram_id = $1", user_id)
             await conn.execute("DELETE FROM banned_users WHERE telegram_id = $1", user_id)
             await conn.execute("DELETE FROM users WHERE telegram_id = $1", user_id)
-            await conn.execute("UPDATE admin_actions SET target = NULL WHERE target = $1", str(user_id))
+            await conn.execute(
+                "UPDATE admin_actions SET target = NULL, detail = NULL WHERE target = $1", str(user_id)
+            )
             return {"feedback_given_deleted": len(given_feedback)}
 
     async def export_stats(self, format_type: str = "csv") -> str:

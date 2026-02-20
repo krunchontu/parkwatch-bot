@@ -162,6 +162,23 @@ async def test_purge_user_data_removes_all_tables(db):
 
 
 @pytest.mark.asyncio
+async def test_purge_user_data_scrubs_admin_action_detail(db):
+    """GDPR purge must NULL both target AND detail in admin_actions."""
+    now = datetime.now(timezone.utc)
+    await db.ensure_user(100, "john_doe")
+    await db.log_admin_action(999, "ban_user", target=str(100), detail="Banned user: @john_doe for spamming")
+    await db.log_admin_action(999, "warn_user", target=str(100), detail="Warning #1: stop spamming")
+
+    await db.purge_user_data(100)
+
+    log = await db.get_admin_log(100)
+    for entry in log:
+        if entry["action"] in ("ban_user", "warn_user"):
+            assert entry["target"] is None, "target should be NULLed"
+            assert entry["detail"] is None, "detail should be NULLed to scrub PII"
+
+
+@pytest.mark.asyncio
 async def test_purge_user_does_not_delete_config_overrides(db):
     """purge_user_data should NOT delete config overrides set by the user (shared state)."""
     now = datetime.now(timezone.utc)

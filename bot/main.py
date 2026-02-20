@@ -139,6 +139,13 @@ async def post_init(application):
     # Start health check server
     run_mode = "webhook" if WEBHOOK_URL else "polling"
     if HEALTH_CHECK_ENABLED:
+        if WEBHOOK_URL and HEALTH_CHECK_PORT == PORT:
+            logger.warning(
+                "HEALTH_CHECK_PORT (%d) is the same as webhook PORT (%d) — "
+                "this may cause a port collision. Set HEALTH_CHECK_PORT explicitly.",
+                HEALTH_CHECK_PORT,
+                PORT,
+            )
         await start_health_server(HEALTH_CHECK_PORT, run_mode=run_mode)
 
 

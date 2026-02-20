@@ -25,6 +25,7 @@ from ..utils import (
     get_accuracy_indicator,
     get_reporter_badge,
     haversine_meters,
+    parse_callback_data,
     sanitize_description,
 )
 from ..zones import ZONE_COORDS, ZONES
@@ -414,9 +415,12 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is
     query = update.callback_query
     user_id = update.effective_user.id
 
-    # Extract sighting ID from callback data
-    data = query.data
-    sighting_id = data.replace("feedback_pos_", "").replace("feedback_neg_", "")
+    # Extract and validate sighting ID from callback data
+    prefix = "feedback_pos_" if is_positive else "feedback_neg_"
+    sighting_id = parse_callback_data(prefix, query.data)
+    if sighting_id is None:
+        await query.answer("Invalid action.", show_alert=True)
+        return
     db = get_db()
 
     # --- Self-rating prevention ---
