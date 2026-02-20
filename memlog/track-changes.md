@@ -64,3 +64,8 @@
 - `APP_REVIEW.md`: Added "Status: planned" annotations to Part 1 finding #5 (docs-code divergence on /start flow) and Part 4 finding #1 (/start buttons decorative) with cross-reference to IMPROVEMENTS.md 11.5.1.
 - `memlog/progress.md`: Added Phase 2.4 update with Approach C design completion and next steps.
 - No code files modified — documentation-only changes preparing for implementation.
+
+## 2026-02-20 (Second-pass docs-vs-code review refresh)
+- Rewrote `APP_REVIEW.md` with a fresh, judicious second-pass audit focused on documentation-code alignment, Good/Bad/Ugly framing, and benchmark comparison against world-class Telegram bots.
+- Added an explicit discrepancy register for `/start` behavior, feedback delivery semantics, and done-vs-planned documentation tone.
+- Added prioritized rewrite-first action list emphasizing truth-first docs, feedback delivery contract, fanout hardening, and observability baseline.
