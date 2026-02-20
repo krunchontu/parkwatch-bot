@@ -1,4 +1,4 @@
-"""Unit tests for pure functions in bot.main.
+"""Unit tests for pure utility functions.
 
 Tests: haversine_meters, get_reporter_badge, get_accuracy_indicator,
        sanitize_description, build_alert_message, generate_sighting_id.
@@ -6,16 +6,15 @@ Tests: haversine_meters, get_reporter_badge, get_accuracy_indicator,
 
 from datetime import datetime, timezone
 
-from bot.main import (
-    ZONE_COORDS,
-    ZONES,
-    build_alert_message,
+from bot.ui.messages import build_alert_message
+from bot.utils import (
     generate_sighting_id,
     get_accuracy_indicator,
     get_reporter_badge,
     haversine_meters,
     sanitize_description,
 )
+from bot.zones import ZONE_COORDS, ZONES
 
 
 # ---------------------------------------------------------------------------

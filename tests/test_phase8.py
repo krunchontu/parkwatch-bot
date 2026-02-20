@@ -80,7 +80,7 @@ class TestAdminOnly:
 
     def test_admin_only_rejects_non_admin(self):
         """Non-admin users should receive 'Unknown command' response."""
-        from bot.main import admin_only
+        from bot.handlers.admin import admin_only
 
         called = False
 
@@ -106,7 +106,7 @@ class TestAdminOnly:
 
     def test_admin_only_allows_admin(self):
         """Admin users should be allowed through."""
-        from bot.main import admin_only
+        from bot.handlers.admin import admin_only
 
         called = False
 
@@ -579,14 +579,14 @@ class TestAdminHelp:
 
     def test_admin_commands_help_has_all_commands(self):
         """All Phase 8 admin commands should be listed in help."""
-        from bot.main import ADMIN_COMMANDS_HELP
+        from bot.handlers.admin import ADMIN_COMMANDS_HELP
 
         assert "stats" in ADMIN_COMMANDS_HELP
         assert "log [count]" in ADMIN_COMMANDS_HELP
 
     def test_admin_commands_detailed_has_all_commands(self):
         """All Phase 8 admin commands should have detailed help."""
-        from bot.main import ADMIN_COMMANDS_DETAILED
+        from bot.handlers.admin import ADMIN_COMMANDS_DETAILED
 
         assert "stats" in ADMIN_COMMANDS_DETAILED
         assert "user" in ADMIN_COMMANDS_DETAILED
@@ -602,7 +602,7 @@ class TestZoneValidation:
 
     def test_zone_exists_in_zones_dict(self):
         """Known zones should be found in the ZONES dict."""
-        from bot.main import ZONES
+        from bot.zones import ZONES
 
         found = False
         for region in ZONES.values():
@@ -613,7 +613,7 @@ class TestZoneValidation:
 
     def test_case_insensitive_zone_lookup(self):
         """Zone lookup should support case-insensitive matching."""
-        from bot.main import ZONES
+        from bot.zones import ZONES
 
         target = "bugis"
         found = False

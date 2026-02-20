@@ -536,7 +536,7 @@ class TestBanCheck:
 
     def test_ban_check_blocks_banned_user(self):
         """Banned users should receive a restriction message."""
-        from bot.main import ban_check
+        from bot.services.moderation import ban_check
 
         called = False
 
@@ -562,7 +562,7 @@ class TestBanCheck:
 
     def test_ban_check_allows_non_banned_user(self):
         """Non-banned users should pass through."""
-        from bot.main import ban_check
+        from bot.services.moderation import ban_check
 
         called = False
 
@@ -594,7 +594,7 @@ class TestAutoFlag:
     @pytest.mark.asyncio
     async def test_auto_flag_triggers_on_high_negative(self, db):
         """Sighting should be flagged when negative > 70% with 3+ votes."""
-        from bot.main import _check_auto_flag
+        from bot.services.moderation import _check_auto_flag
 
         now = datetime.now(timezone.utc)
         await db.add_sighting(
@@ -622,7 +622,7 @@ class TestAutoFlag:
     @pytest.mark.asyncio
     async def test_auto_flag_does_not_trigger_under_threshold(self, db):
         """Sighting should NOT be flagged when negative <= 70%."""
-        from bot.main import _check_auto_flag
+        from bot.services.moderation import _check_auto_flag
 
         now = datetime.now(timezone.utc)
         await db.add_sighting(
@@ -650,7 +650,7 @@ class TestAutoFlag:
     @pytest.mark.asyncio
     async def test_auto_flag_requires_minimum_votes(self, db):
         """Should not flag with fewer than 3 total votes."""
-        from bot.main import _check_auto_flag
+        from bot.services.moderation import _check_auto_flag
 
         now = datetime.now(timezone.utc)
         await db.add_sighting(
@@ -678,7 +678,7 @@ class TestAutoFlag:
     @pytest.mark.asyncio
     async def test_auto_flag_nonexistent_sighting(self, db):
         """Should handle non-existent sighting gracefully."""
-        from bot.main import _check_auto_flag
+        from bot.services.moderation import _check_auto_flag
 
         with patch("bot.services.moderation.get_db", return_value=db):
             await _check_auto_flag("nonexistent")  # Should not raise
@@ -692,7 +692,7 @@ class TestAdminHelpPhase9:
 
     def test_admin_commands_help_has_phase9_commands(self):
         """Phase 9 admin commands should be listed in help."""
-        from bot.main import ADMIN_COMMANDS_HELP
+        from bot.handlers.admin import ADMIN_COMMANDS_HELP
 
         help_keys = " ".join(ADMIN_COMMANDS_HELP.keys())
         assert "ban" in help_keys
@@ -704,7 +704,7 @@ class TestAdminHelpPhase9:
 
     def test_admin_commands_detailed_has_phase9_commands(self):
         """Phase 9 admin commands should have detailed help."""
-        from bot.main import ADMIN_COMMANDS_DETAILED
+        from bot.handlers.admin import ADMIN_COMMANDS_DETAILED
 
         assert "ban" in ADMIN_COMMANDS_DETAILED
         assert "unban" in ADMIN_COMMANDS_DETAILED
