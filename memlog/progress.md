@@ -95,3 +95,16 @@ Next Steps:
 3. Proceed to remaining 11.5.x items after 11.5.1 is verified.
 Blockers:
 - None for documentation scope.
+
+[UPDATE]
+Phase: 2.5
+Completed:
+- Performed a second-pass, documentation-to-code verification audit as requested.
+- Refreshed `APP_REVIEW.md` with explicit Good/Bad/Ugly findings and a discrepancy register.
+- Re-validated benchmark framing versus world-class Telegram bot operational standards.
+Next Steps:
+1. Implement or downgrade `/start` docs claims until behavior matches.
+2. Fix `/feedback` acknowledgement contract to reflect actual admin delivery outcomes.
+3. Start fanout reliability + observability baseline implementation.
+Blockers:
+- None for documentation/review deliverable.
