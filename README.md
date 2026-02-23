@@ -317,7 +317,8 @@ sudo systemctl enable parkwatch && sudo systemctl start parkwatch
 ## Further Reading
 
 - [`parking_warden_bot_spec.md`](parking_warden_bot_spec.md) — Product specification: user flows, message formats, reputation system, zone coverage, growth strategy
-- [`IMPROVEMENTS.md`](IMPROVEMENTS.md) — Code review findings and improvement roadmap (Phases 1–14)
+- [`IMPROVEMENTS.md`](IMPROVEMENTS.md) — Improvement roadmap (Phases 12–15) and project file reference
+- [`APP_REVIEW.md`](APP_REVIEW.md) — Full codebase audit: security, architecture, world-class bot comparison (7.5/10)
 
 ---
 

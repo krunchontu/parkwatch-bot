@@ -441,47 +441,12 @@ ParkWatch is essentially "Waze for parking wardens" — crowdsourced real-time a
 
 ---
 
-## Prioritized Remediation Roadmap
+## Remediation
 
-### P0 — Fix Now (Before Next Production Deploy)
-
-| # | Issue | File | Effort |
-|---|-------|------|--------|
-| 1 | Add `first_name` column to `create_tables()` to match migration 005 | `database.py:141` | 5 min |
-| 2 | Add `@functools.wraps(func)` to `ban_check` decorator | `services/moderation.py:23` | 1 min |
-| 3 | Add `user_rate_limits` cleanup to `cleanup_job()` | `main.py:133` | 10 min |
-
-### P1 — Fix Soon (Next Sprint)
-
-| # | Issue | File | Effort |
-|---|-------|------|--------|
-| 4 | Fix `/feedback` to report actual delivery outcome | `handlers/user.py` | Small |
-| 5 | Add connection health checks to asyncpg pool | `database.py:94` | Small |
-| 6 | Add alert expiry color indicators to `/recent` | `handlers/user.py` | Small |
-| 7 | Log warning when `ADMIN_USER_IDS` contains non-numeric entries | `config.py:43` | Trivial |
-| 8 | Add `conversation_timeout` callback to notify users of report expiry | `main.py:239` | Small |
-
-### P2 — Medium Term (Next Quarter)
-
-| # | Issue | Effort |
-|---|-------|--------|
-| 9 | Split `database.py` into repository modules | Medium |
-| 10 | Add observability: command latency + broadcast success metrics | Medium |
-| 11 | Add conversation state persistence (survive restarts) | Medium |
-| 12 | Add PostgreSQL-specific test suite | Medium |
-| 13 | Add test coverage reporting to CI | Small |
-| 14 | Implement inline mode for quick zone checks | Medium |
-
-### P3 — Long Term (Growth Phase)
-
-| # | Issue | Effort |
-|---|-------|--------|
-| 15 | Durable broadcast with persistent job queue (Redis/RabbitMQ) | Large |
-| 16 | Web dashboard for admin analytics | Large |
-| 17 | Internationalization (i18n) — at minimum `en` + `zh` | Large |
-| 18 | Media support (photos of wardens/locations) | Medium |
-| 19 | User-facing privacy controls and data export | Medium |
-| 20 | Horizontal scaling architecture (worker pools, sharding) | Large |
+All findings have been folded into [`IMPROVEMENTS.md`](IMPROVEMENTS.md) as implementation phases:
+- **Phase 11.6** — Audit quick fixes (P0/P1 items)
+- **Phase 11.7** — Reliability hardening
+- **Phase 15** — Scale & operations (P2/P3 items)
 
 ---
 
