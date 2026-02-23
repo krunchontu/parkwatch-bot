@@ -283,7 +283,7 @@ async def handle_zone_selection(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer(f"\u274c Unsubscribed from {zone_name}")
     else:
         username = update.effective_user.username or update.effective_user.first_name or "Unknown"
-        await db.ensure_user(user_id, username)
+        await db.ensure_user(user_id, username, first_name=update.effective_user.first_name)
         await db.add_subscription(user_id, zone_name)
         await query.answer(f"\u2705 Subscribed to {zone_name}")
 
@@ -570,7 +570,13 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.log_admin_action(user_id, "user_feedback", target=str(user_id), detail=preview)
     await db.record_rate_limit_event(user_id, "user_feedback")
 
-    # Confirm to user
-    await update.message.reply_text(
-        "\u2705 Thanks! Your feedback has been sent to the bot admins.\nWe appreciate your input!"
-    )
+    # Confirm to user with actual delivery outcome
+    if sent > 0:
+        await update.message.reply_text(
+            f"\u2705 Thanks! Your feedback was sent to {sent} admin(s).\nWe appreciate your input!"
+        )
+    else:
+        await update.message.reply_text(
+            "\u26a0\ufe0f Your feedback could not be delivered to any admins right now.\n"
+            "It has been logged and will be reviewed."
+        )

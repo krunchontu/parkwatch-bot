@@ -133,3 +133,22 @@ Next Steps:
 3. Start fanout reliability + observability baseline implementation.
 Blockers:
 - None for documentation/review deliverable.
+
+[UPDATE]
+Phase: 3.1
+Completed:
+- Implemented Phase 11.6 (Audit Quick Fixes) — all 8 items completed.
+- 11.6.1: Added `first_name TEXT` column to users table in `create_tables()`, `ensure_user()`, and `get_user_details()`. Created Alembic migration 007. Updated handlers to pass `first_name`.
+- 11.6.2: Added `@functools.wraps(func)` to `ban_check` decorator in `services/moderation.py` for consistent function metadata.
+- 11.6.3: Added `cleanup_old_rate_limits()` DB method and wired into `cleanup_job()` to purge `user_rate_limits` entries older than 24h.
+- 11.6.4: Added `logger.warning()` for non-numeric entries in `ADMIN_USER_IDS` parsing in `config.py`.
+- 11.6.5: Fixed `/feedback` command to report actual delivery outcome — "Sent to N admin(s)" or "Could not be delivered" with logged fallback.
+- 11.6.6: Verified alert expiry color indicators (red/yellow/green) already correctly implemented in `_build_recent_text()`.
+- 11.6.7: Added `conversation_timeout` callback in `report.py` and wired to `ConversationHandler.TIMEOUT` state. Sends expiry notification and clears pending report data.
+- 11.6.8: Added 21 new tests in `tests/test_phase11_6.py`. Updated 1 existing test (test_phase10.py) for new feedback delivery behavior. Full suite: 356 tests passing.
+- Bumped BOT_VERSION to 1.5.0, updated pyproject.toml, README.md, IMPROVEMENTS.md, and memlog.
+Next Steps:
+1. Proceed to Phase 11.7 (Reliability Hardening) or Phase 12 growth features.
+2. Consider database module split (Phase 11.8) before major feature additions.
+Blockers:
+- None.

@@ -42,7 +42,7 @@ python -m bot.main
 
 You should see:
 ```
-2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.4.0 starting in polling mode
+2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.5.0 starting in polling mode
 2026-XX-XX XX:XX:XX - bot.health - INFO - Health check server started on port 8080 (GET /health)
 ```
 
@@ -138,7 +138,7 @@ For detailed user flows, message formats, reputation rules, and zone lists, see 
 | `MAX_REPORTS_PER_HOUR` | 3 | Rate limit per user |
 | `DUPLICATE_WINDOW_MINUTES` | 5 | Time window for duplicate detection |
 | `DUPLICATE_RADIUS_METERS` | 200 | GPS radius for duplicate detection (Haversine) |
-| `BOT_VERSION` | 1.4.0 | Version reported in health check & Sentry |
+| `BOT_VERSION` | 1.5.0 | Version reported in health check & Sentry |
 
 ---
 
@@ -169,7 +169,7 @@ parkwatch-bot/
 │   ├── health.py                # Health check HTTP server (GET /health)
 │   └── logging_config.py        # Structured logging (text/JSON modes)
 ├── tests/                       # pytest suite (unit, integration, infrastructure, admin, moderation, UX)
-├── alembic/                     # Database migration scripts (6 migrations)
+├── alembic/                     # Database migration scripts (7 migrations)
 ├── config.py                    # Environment configuration
 ├── pyproject.toml               # Project metadata, deps, tool configs
 ├── requirements.txt             # Runtime dependencies

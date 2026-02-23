@@ -141,6 +141,7 @@ class Database:
             """CREATE TABLE IF NOT EXISTS users (
                 telegram_id BIGINT PRIMARY KEY,
                 username TEXT,
+                first_name TEXT,
                 report_count INTEGER DEFAULT 0,
                 warnings INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -267,19 +268,21 @@ class Database:
 
     # --- Users ---
 
-    async def ensure_user(self, user_id: int, username: str) -> None:
-        """Create user if not exists, update username if changed."""
+    async def ensure_user(self, user_id: int, username: str, first_name: str | None = None) -> None:
+        """Create user if not exists, update username/first_name if changed."""
         if self.driver == "sqlite":
             await self._execute(
-                "INSERT INTO users (telegram_id, username) VALUES (?, ?) "
-                "ON CONFLICT(telegram_id) DO UPDATE SET username = excluded.username",
-                (user_id, username),
+                "INSERT INTO users (telegram_id, username, first_name) VALUES (?, ?, ?) "
+                "ON CONFLICT(telegram_id) DO UPDATE SET username = excluded.username, "
+                "first_name = excluded.first_name",
+                (user_id, username, first_name),
             )
         else:
             await self._execute(
-                "INSERT INTO users (telegram_id, username) VALUES ($1, $2) "
-                "ON CONFLICT (telegram_id) DO UPDATE SET username = EXCLUDED.username",
-                (user_id, username),
+                "INSERT INTO users (telegram_id, username, first_name) VALUES ($1, $2, $3) "
+                "ON CONFLICT (telegram_id) DO UPDATE SET username = EXCLUDED.username, "
+                "first_name = EXCLUDED.first_name",
+                (user_id, username, first_name),
             )
 
     async def get_user_stats(self, user_id: int) -> UserStatsRow | None:
@@ -662,7 +665,7 @@ class Database:
     async def get_user_details(self, user_id: int) -> UserRow | None:
         """Get detailed user information for admin lookup."""
         row = await self._fetchone(
-            f"SELECT telegram_id, username, report_count, created_at FROM users WHERE telegram_id = {self._ph(1)}",
+            f"SELECT telegram_id, username, first_name, report_count, created_at FROM users WHERE telegram_id = {self._ph(1)}",
             (user_id,),
         )
         return cast(UserRow, row) if row else None
@@ -1052,6 +1055,22 @@ class Database:
             f"INSERT INTO user_rate_limits (user_id, action, created_at) VALUES ({ph(1)}, {ph(2)}, {ph(3)})",
             (user_id, action, datetime.now(timezone.utc)),
         )
+
+    async def cleanup_old_rate_limits(self, max_age_hours: int = 24) -> int:
+        """Delete rate limit entries older than max_age_hours. Returns count deleted."""
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        if self.driver == "sqlite":
+            cursor = await self._conn.execute("DELETE FROM user_rate_limits WHERE created_at < ?", (cutoff,))
+            count = cursor.rowcount
+            await self._conn.commit()
+            return count
+        else:
+            async with self._pool.acquire() as conn, conn.transaction():
+                result = await conn.execute("DELETE FROM user_rate_limits WHERE created_at < $1", cutoff)
+                try:
+                    return int(result.split()[-1])
+                except (ValueError, IndexError):
+                    return 0
 
     async def count_user_feedback_since(self, user_id: int, since: datetime) -> int:
         """Count feedback messages sent by a user since a given time (for rate limiting).

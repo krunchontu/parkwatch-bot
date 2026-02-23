@@ -1,8 +1,8 @@
 # ParkWatch SG — Improvement Plan
 
-**Last updated:** 2026-02-23 (post-audit consolidation)
-**Current version:** 1.4.0 · **Tests:** 335 passing · **Phases 1–11.5 complete**
-**Roadmap:** 11.6 → 11.7 → 11.8 → 12 → 13 → 14 → 15
+**Last updated:** 2026-02-23 (Phase 11.6 complete)
+**Current version:** 1.5.0 · **Tests:** 356 passing · **Phases 1–11.6 complete**
+**Roadmap:** 11.7 → 11.8 → 12 → 13 → 14 → 15
 
 ---
 
@@ -24,21 +24,7 @@ All items below are implemented, tested, and verified in CI.
 | 10 | Architecture & UX | Module refactor, `/feedback` command, `/admin announce`, richer `/start` menu |
 | 11 | Admin Operations | Runtime config, maintenance mode, data purge (GDPR), CSV/JSON export |
 | 11.5 | Tech Debt | `/start` menu fix, `ban_check` callback safety, broadcast concurrency, TypedDict models, handler tests, rate limit decoupling |
-
----
-
-## Phase 11.6: Audit Quick Fixes
-
-Small, targeted fixes identified in the 2026-02-23 codebase audit. Should land before the next production deploy.
-
-- [ ] **11.6.1** Add `first_name` column to `create_tables()` to match Alembic migration 005 (`database.py`)
-- [ ] **11.6.2** Add `@functools.wraps(func)` to `ban_check` decorator for consistent metadata (`services/moderation.py`)
-- [ ] **11.6.3** Add `user_rate_limits` cleanup to `cleanup_job()` — purge entries older than 24h (`main.py`)
-- [ ] **11.6.4** Log warning when `ADMIN_USER_IDS` contains non-numeric entries instead of silently ignoring (`config.py`)
-- [ ] **11.6.5** Fix `/feedback` to report actual delivery outcome — "Sent to N admin(s)" or "Could not deliver" (`handlers/user.py`)
-- [ ] **11.6.6** Add alert expiry color indicators (🔴🟡🟢) to `/recent` display per spec (`handlers/user.py`)
-- [ ] **11.6.7** Add `conversation_timeout` callback to notify users when report flow expires (`main.py`)
-- [ ] **11.6.8** Tests for all 11.6 items; CI must pass
+| 11.6 | Audit Quick Fixes | `first_name` column, `ban_check` wraps, rate-limit cleanup, admin ID warning, feedback delivery outcome, conversation timeout, 21 new tests |
 
 ---
 
