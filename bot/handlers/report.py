@@ -563,11 +563,35 @@ async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 
+# Singapore bounding box (with margin for edge locations)
+_SG_LAT_MIN, _SG_LAT_MAX = 1.15, 1.47
+_SG_LNG_MIN, _SG_LNG_MAX = 103.60, 104.05
+
+
+def _is_within_singapore(lat: float, lng: float) -> bool:
+    """Check if GPS coordinates fall within Singapore's bounding box."""
+    return _SG_LAT_MIN <= lat <= _SG_LAT_MAX and _SG_LNG_MIN <= lng <= _SG_LNG_MAX
+
+
 @maintenance_conversation_check
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle shared location for report."""
     location = update.message.location
     lat, lng = location.latitude, location.longitude
+
+    # Phase 11.7.5: Reject coordinates outside Singapore
+    if not _is_within_singapore(lat, lng):
+        await update.message.reply_text(
+            "\u274c The shared location is outside Singapore.\n"
+            "ParkWatch SG only covers Singapore zones.\n\n"
+            "Please share a valid Singapore location, or select a zone manually.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        await update.message.reply_text(
+            _REPORT_METHOD_TEXT,
+            reply_markup=_REPORT_METHOD_KEYBOARD,
+        )
+        return CHOOSING_METHOD
 
     # Find nearest zone using module-level ZONE_COORDS
     nearest_zone = None

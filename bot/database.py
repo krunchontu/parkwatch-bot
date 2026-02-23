@@ -91,7 +91,18 @@ class Database:
         else:
             import asyncpg
 
-            self._pool = await asyncpg.create_pool(self.database_url, min_size=2, max_size=10)
+            async def _pool_init(conn):
+                # Phase 11.7.1: Configure connection-level health settings
+                await conn.execute("SET statement_timeout = '30s'")
+                await conn.execute("SET idle_in_transaction_session_timeout = '60s'")
+
+            self._pool = await asyncpg.create_pool(
+                self.database_url,
+                min_size=2,
+                max_size=10,
+                command_timeout=30,
+                init=_pool_init,
+            )
 
     async def close(self):
         """Close the database connection."""
@@ -99,6 +110,56 @@ class Database:
             await self._conn.close()
         elif self.driver == "postgresql" and self._pool:
             await self._pool.close()
+
+    async def check_pool_health(self) -> dict:
+        """Check connection pool health (Phase 11.7.1).
+
+        Returns a dict with pool size, free connections, and a connectivity check.
+        For SQLite, returns a simple connectivity check.
+        """
+        if self.driver == "sqlite":
+            try:
+                row = await self._fetchone("SELECT 1 AS ok")
+                return {"driver": "sqlite", "healthy": row is not None and row["ok"] == 1}
+            except Exception as e:
+                logger.error("SQLite health check failed: %s", e)
+                return {"driver": "sqlite", "healthy": False, "error": str(e)}
+
+        if self._pool is None:
+            return {"driver": "postgresql", "healthy": False, "error": "Pool not initialized"}
+
+        try:
+            pool_size = self._pool.get_size()
+            pool_free = self._pool.get_idle_size()
+            pool_min = self._pool.get_min_size()
+            pool_max = self._pool.get_max_size()
+
+            # Connectivity check
+            async with self._pool.acquire() as conn:
+                row = await conn.fetchrow("SELECT 1 AS ok")
+                connected = row is not None and row["ok"] == 1
+
+            exhausted = pool_free == 0 and pool_size >= pool_max
+            if exhausted:
+                logger.warning(
+                    "Connection pool exhausted: size=%d, free=%d, max=%d",
+                    pool_size,
+                    pool_free,
+                    pool_max,
+                )
+
+            return {
+                "driver": "postgresql",
+                "healthy": connected and not exhausted,
+                "pool_size": pool_size,
+                "pool_free": pool_free,
+                "pool_min": pool_min,
+                "pool_max": pool_max,
+                "pool_exhausted": exhausted,
+            }
+        except Exception as e:
+            logger.error("PostgreSQL health check failed: %s", e)
+            return {"driver": "postgresql", "healthy": False, "error": str(e)}
 
     # --- Internal query helpers ---
 

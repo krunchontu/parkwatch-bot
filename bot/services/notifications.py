@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 _MAX_CONCURRENCY = 20
 
 
-async def _send_one(bot, uid, text, reply_markup, semaphore, retries=1):
-    """Send a single message with bounded concurrency and optional retry.
+async def _send_one(bot, uid, text, reply_markup, semaphore, retries=3):
+    """Send a single message with bounded concurrency and exponential backoff.
 
+    Uses exponential backoff (1s, 2s, 4s) on transient (non-RetryAfter) failures.
     Returns ("sent", uid), ("blocked", uid), or ("failed", uid).
     """
     async with semaphore:
@@ -30,9 +31,17 @@ async def _send_one(bot, uid, text, reply_markup, semaphore, retries=1):
                 continue
             except (TimedOut, OSError) as e:
                 if attempt < retries:
-                    await asyncio.sleep(1)
+                    backoff = 2**attempt  # 1s, 2s, 4s
+                    logger.debug(
+                        "Transient failure sending to %d (attempt %d), retrying in %ds: %s",
+                        uid,
+                        attempt + 1,
+                        backoff,
+                        e,
+                    )
+                    await asyncio.sleep(backoff)
                     continue
-                logger.error("Failed to send alert to %d after retry: %s", uid, e)
+                logger.error("Failed to send alert to %d after %d retries: %s", uid, retries, e)
                 return "failed", uid
             except Exception as e:
                 logger.error("Failed to send alert to %d: %s", uid, e)

@@ -11,15 +11,18 @@ from telegram.ext import (
     ConversationHandler,
     InlineQueryHandler,
     MessageHandler,
+    PicklePersistence,
     filters,
 )
 
 from config import (
     BOT_VERSION,
+    CLEANUP_INTERVAL_HOURS,
     DATABASE_URL,
     HEALTH_CHECK_ENABLED,
     HEALTH_CHECK_PORT,
     LOG_FORMAT,
+    PERSISTENCE_PATH,
     PORT,
     SENTRY_DSN,
     TELEGRAM_BOT_TOKEN,
@@ -199,16 +202,26 @@ def main():
     # Initialize Sentry error tracking (if configured)
     _init_sentry()
 
-    # Create application with lifecycle hooks
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
+    # Create application with lifecycle hooks and conversation persistence
+    persistence = PicklePersistence(filepath=PERSISTENCE_PATH)
+    app = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .persistence(persistence)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
+    )
 
-    # ConversationHandler for report flow
+    # ConversationHandler for report flow (persistent across restarts)
     report_conv = ConversationHandler(
         entry_points=[
             CommandHandler("report", report),
             CallbackQueryHandler(report_from_start, pattern="^start_report$"),
         ],
         allow_reentry=True,
+        persistent=True,
+        name="report_conversation",
         states={
             CHOOSING_METHOD: [
                 CallbackQueryHandler(handle_report_location_button, pattern="^report_location$"),
@@ -268,8 +281,9 @@ def main():
     # Global error handler
     app.add_error_handler(error_handler)
 
-    # Schedule sighting cleanup every 6 hours
-    app.job_queue.run_repeating(cleanup_job, interval=21600, first=60)
+    # Schedule sighting cleanup (interval configurable via CLEANUP_INTERVAL_HOURS)
+    cleanup_interval_secs = CLEANUP_INTERVAL_HOURS * 3600
+    app.job_queue.run_repeating(cleanup_job, interval=cleanup_interval_secs, first=60)
 
     # Start bot in webhook or polling mode
     if WEBHOOK_URL:
