@@ -2,6 +2,7 @@
 
 **Last updated:** 2026-02-23 (post-audit consolidation)
 **Current version:** 1.4.0 · **Tests:** 335 passing · **Phases 1–11.5 complete**
+**Roadmap:** 11.6 → 11.7 → 11.8 → 12 → 13 → 14 → 15
 
 ---
 
@@ -54,9 +55,19 @@ Connection reliability and database resilience improvements.
 
 ---
 
+## Phase 11.8: Database Refactor
+
+Split the `database.py` god module (1,067 lines) **before** growth features add more queries to it.
+
+- [ ] **11.8.1** Split `database.py` into repository modules: `UserRepository`, `SightingRepository`, `FeedbackRepository`, `AdminRepository`, `ConfigRepository`
+- [ ] **11.8.2** Add PostgreSQL-specific test suite (currently all tests use SQLite)
+- [ ] **11.8.3** Tests for all 11.8 items; CI must pass
+
+---
+
 ## Phase 12: Growth Features
 
-**Depends on:** Phase 11.6 (at minimum). Growth features land on the hardened base.
+**Depends on:** Phases 11.6–11.8. Growth features land on the hardened, well-structured base.
 
 **Priority order:** 12.1 → 12.2 → 12.3 → 12.4
 
@@ -133,22 +144,18 @@ Architectural investments for production at scale. Informed by 2026-02-23 audit 
 - [ ] Basic SLOs and alerting thresholds
 - [ ] Test coverage reporting in CI
 
-#### 15.2 Database Architecture
-- [ ] Split `database.py` (1,067 lines) into repository modules: `UserRepository`, `SightingRepository`, `FeedbackRepository`, `AdminRepository`, `ConfigRepository`
-- [ ] PostgreSQL-specific test suite (currently all tests use SQLite)
-
-#### 15.3 Delivery Guarantees
+#### 15.2 Delivery Guarantees
 - [ ] Persistent broadcast job queue (Redis or database-backed)
 - [ ] Per-recipient delivery tracking
 - [ ] Dead-letter handling for permanently failed deliveries
 - [ ] Idempotency keys to prevent duplicate sends on restart
 
-#### 15.4 Horizontal Scaling
+#### 15.3 Horizontal Scaling
 - [ ] Worker-based broadcast architecture
 - [ ] Connection pool tuning and read replicas
 - [ ] Graceful shutdown with in-flight broadcast draining
 
-#### 15.5 User Engagement
+#### 15.4 User Engagement
 - [ ] Media support (photos of warden sightings)
 - [ ] User-facing privacy controls and self-service data export
 - [ ] Web dashboard for admin analytics
