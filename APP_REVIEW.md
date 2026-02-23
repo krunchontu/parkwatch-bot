@@ -121,16 +121,12 @@ Migration 005 adds a `first_name` column to the `users` table. However, `create_
 
 **Impact:** Inconsistency between migration-based and `create_tables()`-based schema. Low severity because production should always use Alembic.
 
-### 4. No Connection Pool Health Checks — MEDIUM
+### 4. ~~No Connection Pool Health Checks~~ — ✅ RESOLVED (Phase 11.7.1)
 **File:** `bot/database.py:94`
 
-The asyncpg connection pool (`min_size=2, max_size=10`) has no:
-- Connection keepalive/health check
-- Statement timeout
-- Idle connection cleanup
-- Pool exhaustion handling
+~~The asyncpg connection pool (`min_size=2, max_size=10`) has no keepalive, statement timeout, idle connection cleanup, or pool exhaustion handling.~~
 
-**Impact:** Under sustained load or after PostgreSQL restarts, stale connections can silently fail. The pool doesn't validate connections before returning them.
+**Resolved:** Phase 11.7.1 added `statement_timeout` (30s), `idle_in_transaction_session_timeout` (60s), `command_timeout` (30s) via pool `init` callback, and a `check_pool_health()` method that monitors pool size, free connections, and detects pool exhaustion.
 
 ### 5. Singleton Global State Pattern — LOW
 **Files:** `bot/database.py:25` (`_db`), `bot/services/runtime_settings.py:129` (`_runtime_settings`), `bot/health.py:19` (`_server`)
@@ -231,15 +227,12 @@ The bot relies entirely on `python-telegram-bot`'s built-in signal handling. The
 
 If the process receives SIGTERM during a broadcast, some messages may be lost.
 
-### 6. Conversation State Lost on Restart
-**File:** `bot/main.py:199-240`
+### 6. ~~Conversation State Lost on Restart~~ — ✅ RESOLVED (Phase 11.7.2)
+**File:** `bot/main.py`
 
-The `ConversationHandler` stores state in memory (default `python-telegram-bot` behavior). If the bot restarts mid-report:
-- All in-progress reports are silently lost
-- Users get no notification that their report was abandoned
-- The 5-minute timeout eventually cleans up, but users won't know what happened
+~~The `ConversationHandler` stores state in memory. If the bot restarts mid-report, all in-progress reports are silently lost.~~
 
-**Best practice:** Use `ConversationHandler(persistent=True)` with a `PicklePersistence` or database-backed persistence store.
+**Resolved:** Phase 11.7.2 added `PicklePersistence` (filepath configurable via `PERSISTENCE_PATH`) and set `ConversationHandler(persistent=True, name="report_conversation")`. In-progress reports now survive bot restarts.
 
 ---
 
@@ -293,7 +286,7 @@ The `ConversationHandler` stores state in memory (default `python-telegram-bot` 
 
 1. **Bot Token in Webhook URL Path** — `main.py:274`: `url_path=f"webhook/{TELEGRAM_BOT_TOKEN}"`. This is actually the recommended Telegram practice (the token serves as a secret path), but if the webhook URL is logged or exposed, the token leaks. The token IS the authentication.
 
-2. **No Input Validation on GPS Coordinates** — `report.py:557-558`: `lat, lng = location.latitude, location.longitude` with no bounds checking. While Telegram validates coordinates, a compromised client could send garbage values (e.g., lat=999). The haversine function handles out-of-range values gracefully (returns large distances), so this is LOW severity.
+2. ~~**No Input Validation on GPS Coordinates**~~ — ✅ RESOLVED (Phase 11.7.5). `handle_location()` now validates coordinates against Singapore's bounding box (lat 1.15–1.47, lng 103.60–104.05) and rejects out-of-bounds locations with a user-friendly message redirecting to manual zone selection.
 
 3. **`ADMIN_USER_IDS` Silent Failure** — `config.py:44`: Non-numeric admin IDs are silently ignored. An operator typing `ADMIN_USER_IDS=admin1,admin2` (using usernames instead of IDs) would get no admin access with no error.
 
@@ -381,7 +374,7 @@ ParkWatch is essentially "Waze for parking wardens" — crowdsourced real-time a
 - Clean handler registration with proper priority (ConversationHandler before catch-all CallbackQueryHandler).
 - `handle_callback()` routes non-report callbacks with a series of if/elif chains. At 15+ branches this is approaching the point where a dispatch table would be cleaner.
 - The webhook URL path includes the bot token (`webhook/{TELEGRAM_BOT_TOKEN}`), which is Telegram's recommended pattern.
-- `cleanup_job` interval is hardcoded to 21600 seconds (6 hours) — should ideally be configurable.
+- ~~`cleanup_job` interval is hardcoded to 21600 seconds (6 hours)~~ — ✅ Resolved (Phase 11.7.3): now configurable via `CLEANUP_INTERVAL_HOURS` env var and runtime settings.
 
 ### `bot/handlers/report.py` (611 lines)
 - Well-structured 6-state ConversationHandler with all transitions documented.
@@ -405,7 +398,7 @@ ParkWatch is essentially "Waze for parking wardens" — crowdsourced real-time a
 - Clean bounded concurrency pattern.
 - `_send_one()` returns result tuples — functional style, easy to aggregate.
 - Retry logic is reasonable: 1 retry for transient errors, immediate return for permanent errors (Forbidden).
-- No exponential backoff on non-RetryAfter failures — a fixed 1-second sleep is used.
+- ~~No exponential backoff on non-RetryAfter failures~~ — ✅ Resolved (Phase 11.7.4): now uses exponential backoff (1s, 2s, 4s) with 3 retries on transient failures.
 
 ### `bot/services/runtime_settings.py` (134 lines)
 - Typed setting specs with validation — much better than raw string configs.
@@ -444,8 +437,8 @@ ParkWatch is essentially "Waze for parking wardens" — crowdsourced real-time a
 ## Remediation
 
 All findings have been folded into [`IMPROVEMENTS.md`](IMPROVEMENTS.md) as implementation phases:
-- **Phase 11.6** — Audit quick fixes (P0/P1 items)
-- **Phase 11.7** — Reliability hardening
+- **Phase 11.6** — Audit quick fixes (P0/P1 items) — ✅ Complete
+- **Phase 11.7** — Reliability hardening — ✅ Complete
 - **Phase 15** — Scale & operations (P2/P3 items)
 
 ---

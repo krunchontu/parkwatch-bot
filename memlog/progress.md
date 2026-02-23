@@ -152,3 +152,21 @@ Next Steps:
 2. Consider database module split (Phase 11.8) before major feature additions.
 Blockers:
 - None.
+
+[UPDATE]
+Phase: 3.2
+Completed:
+- Implemented Phase 11.7 (Reliability Hardening) — all 6 items completed.
+- 11.7.1: Added asyncpg connection pool health checks — `statement_timeout` (30s), `idle_in_transaction_session_timeout` (60s), `command_timeout` (30s) via pool init callback. Added `check_pool_health()` method with pool size, free connections, and exhaustion detection.
+- 11.7.2: Added conversation state persistence via `PicklePersistence` (filepath configurable via `PERSISTENCE_PATH` env var). ConversationHandler set to `persistent=True, name="report_conversation"`. In-progress reports now survive bot restarts.
+- 11.7.3: Made `cleanup_job` interval configurable via `CLEANUP_INTERVAL_HOURS` env var (default 6h). Added to runtime settings allowlist for live adjustment via `/admin config`.
+- 11.7.4: Added exponential backoff (1s, 2s, 4s) on non-RetryAfter transient failures in broadcast `_send_one()`. Increased default retries from 1 to 3.
+- 11.7.5: Added GPS coordinate bounds validation in `handle_location()` — rejects coordinates outside Singapore (lat 1.15–1.47, lng 103.60–104.05) with user-friendly message redirecting to manual zone selection.
+- 11.7.6: Added 26 new tests in `tests/test_phase11_7.py` covering all items. Full suite: 382 tests passing.
+- Bumped BOT_VERSION to 1.6.0. Updated all docs: IMPROVEMENTS.md, README.md, APP_REVIEW.md, memlog.
+- Updated existing tests for forward-compatible version checks (test_phase8.py, test_phase9.py, test_phase11_runtime_config.py).
+Next Steps:
+1. Proceed to Phase 11.8 (Database Refactor) before growth features.
+2. Phase 12 growth features can begin after 11.8.
+Blockers:
+- None.

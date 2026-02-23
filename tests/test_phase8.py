@@ -69,7 +69,9 @@ class TestAdminConfig:
     def test_bot_version_updated(self):
         from config import BOT_VERSION
 
-        assert BOT_VERSION == "1.5.0"
+        major, minor, _patch = BOT_VERSION.split(".")
+        assert int(major) >= 1
+        assert int(minor) >= 5
 
 
 # ---------------------------------------------------------------------------

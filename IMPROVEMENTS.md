@@ -1,8 +1,8 @@
 # ParkWatch SG — Improvement Plan
 
-**Last updated:** 2026-02-23 (Phase 11.6 complete)
-**Current version:** 1.5.0 · **Tests:** 356 passing · **Phases 1–11.6 complete**
-**Roadmap:** 11.7 → 11.8 → 12 → 13 → 14 → 15
+**Last updated:** 2026-02-23 (Phase 11.7 complete)
+**Current version:** 1.6.0 · **Tests:** 382 passing · **Phases 1–11.7 complete**
+**Roadmap:** 11.8 → 12 → 13 → 14 → 15
 
 ---
 
@@ -25,19 +25,7 @@ All items below are implemented, tested, and verified in CI.
 | 11 | Admin Operations | Runtime config, maintenance mode, data purge (GDPR), CSV/JSON export |
 | 11.5 | Tech Debt | `/start` menu fix, `ban_check` callback safety, broadcast concurrency, TypedDict models, handler tests, rate limit decoupling |
 | 11.6 | Audit Quick Fixes | `first_name` column, `ban_check` wraps, rate-limit cleanup, admin ID warning, feedback delivery outcome, conversation timeout, 21 new tests |
-
----
-
-## Phase 11.7: Reliability Hardening
-
-Connection reliability and database resilience improvements.
-
-- [ ] **11.7.1** Add asyncpg connection pool health checks: keepalive, statement timeout, pool exhaustion handling (`database.py`)
-- [ ] **11.7.2** Add conversation state persistence via `PicklePersistence` or DB-backed store — survive restarts (`main.py`)
-- [ ] **11.7.3** Make `cleanup_job` interval configurable via runtime settings (currently hardcoded 6h) (`main.py`)
-- [ ] **11.7.4** Add exponential backoff on non-RetryAfter transient failures in broadcast (`services/notifications.py`)
-- [ ] **11.7.5** Add GPS coordinate bounds validation in `handle_location()` (`handlers/report.py`)
-- [ ] **11.7.6** Tests for all 11.7 items
+| 11.7 | Reliability Hardening | Connection pool health checks, PicklePersistence, configurable cleanup interval, exponential backoff, GPS bounds validation, 26 new tests |
 
 ---
 
@@ -53,7 +41,7 @@ Split the `database.py` god module (1,067 lines) **before** growth features add 
 
 ## Phase 12: Growth Features
 
-**Depends on:** Phases 11.6–11.8. Growth features land on the hardened, well-structured base.
+**Depends on:** Phases 11.7–11.8. Growth features land on the hardened, well-structured base.
 
 **Priority order:** 12.1 → 12.2 → 12.3 → 12.4
 
@@ -189,6 +177,8 @@ Architectural investments for production at scale. Informed by 2026-02-23 audit 
 | `MAX_WARNINGS` | No | `3` | Warnings before auto-ban |
 | `SIGHTING_RETENTION_DAYS` | No | `30` | Days to retain sightings |
 | `FEEDBACK_WINDOW_HOURS` | No | `24` | Feedback button lifetime |
+| `PERSISTENCE_PATH` | No | `parkwatch_persistence` | File path for PicklePersistence (conversation state) |
+| `CLEANUP_INTERVAL_HOURS` | No | `6` | Cleanup job interval in hours (runtime-configurable) |
 
 ---
 

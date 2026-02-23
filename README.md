@@ -42,7 +42,7 @@ python -m bot.main
 
 You should see:
 ```
-2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.5.0 starting in polling mode
+2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.6.0 starting in polling mode
 2026-XX-XX XX:XX:XX - bot.health - INFO - Health check server started on port 8080 (GET /health)
 ```
 
@@ -129,6 +129,8 @@ For detailed user flows, message formats, reputation rules, and zone lists, see 
 | `MAX_WARNINGS` | Warnings before auto-ban (0 to disable) | No | `3` |
 | `SIGHTING_RETENTION_DAYS` | Days to retain sighting data | No | `30` |
 | `FEEDBACK_WINDOW_HOURS` | Hours feedback buttons remain active | No | `24` |
+| `PERSISTENCE_PATH` | File path for conversation state persistence | No | `parkwatch_persistence` |
+| `CLEANUP_INTERVAL_HOURS` | Cleanup job interval in hours | No | `6` |
 
 ### Bot Settings (`config.py`)
 
@@ -138,7 +140,7 @@ For detailed user flows, message formats, reputation rules, and zone lists, see 
 | `MAX_REPORTS_PER_HOUR` | 3 | Rate limit per user |
 | `DUPLICATE_WINDOW_MINUTES` | 5 | Time window for duplicate detection |
 | `DUPLICATE_RADIUS_METERS` | 200 | GPS radius for duplicate detection (Haversine) |
-| `BOT_VERSION` | 1.5.0 | Version reported in health check & Sentry |
+| `BOT_VERSION` | 1.6.0 | Version reported in health check & Sentry |
 
 ---
 

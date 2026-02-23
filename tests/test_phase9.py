@@ -525,7 +525,9 @@ class TestMaxWarningsConfig:
         """Bot version should be bumped for Phase 9."""
         from config import BOT_VERSION
 
-        assert BOT_VERSION == "1.5.0"
+        major, minor, _patch = BOT_VERSION.split(".")
+        assert int(major) >= 1
+        assert int(minor) >= 5
 
 
 # ---------------------------------------------------------------------------

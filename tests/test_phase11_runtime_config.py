@@ -170,8 +170,8 @@ async def test_set_override_returns_old_new(db):
 
 
 @pytest.mark.asyncio
-async def test_allowlist_contains_exactly_nine_keys():
-    """The mutable registry contains exactly the 9 specified keys."""
+async def test_allowlist_contains_exactly_ten_keys():
+    """The mutable registry contains exactly the 10 specified keys."""
     expected = {
         "MAX_REPORTS_PER_HOUR",
         "DUPLICATE_WINDOW_MINUTES",
@@ -182,6 +182,7 @@ async def test_allowlist_contains_exactly_nine_keys():
         "MAX_WARNINGS",
         "MAINTENANCE_MODE",
         "MAINTENANCE_MESSAGE",
+        "CLEANUP_INTERVAL_HOURS",
     }
     assert set(MUTABLE_SPECS.keys()) == expected
 

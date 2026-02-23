@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from config import (
+    CLEANUP_INTERVAL_HOURS,
     DUPLICATE_RADIUS_METERS,
     DUPLICATE_WINDOW_MINUTES,
     FEEDBACK_WINDOW_HOURS,
@@ -38,6 +39,7 @@ MUTABLE_SPECS: dict[str, SettingSpec] = {
     "MAX_WARNINGS": SettingSpec("MAX_WARNINGS", int, MAX_WARNINGS),
     "MAINTENANCE_MODE": SettingSpec("MAINTENANCE_MODE", bool, MAINTENANCE_MODE),
     "MAINTENANCE_MESSAGE": SettingSpec("MAINTENANCE_MESSAGE", str, MAINTENANCE_MESSAGE),
+    "CLEANUP_INTERVAL_HOURS": SettingSpec("CLEANUP_INTERVAL_HOURS", int, CLEANUP_INTERVAL_HOURS),
 }
 
 
