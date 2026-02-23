@@ -36,6 +36,7 @@ from .handlers.report import (
     SELECTING_REGION,
     SELECTING_ZONE,
     cancel_report,
+    conversation_timeout,
     handle_description_input,
     handle_feedback,
     handle_location,
@@ -131,15 +132,21 @@ async def error_handler(update: object, context):
 
 
 async def cleanup_job(context):
-    """Scheduled job to clean up old sightings."""
+    """Scheduled job to clean up old sightings and stale rate-limit entries."""
     if await is_maintenance_enabled():
         logger.info("Skipping cleanup job due to maintenance mode")
         return
 
+    db = get_db()
     retention_days = await get_runtime_settings().get("SIGHTING_RETENTION_DAYS")
-    deleted = await get_db().cleanup_old_sightings(retention_days)
+    deleted = await db.cleanup_old_sightings(retention_days)
     if deleted:
         logger.info(f"Cleaned up {deleted} old sighting(s)")
+
+    # Purge rate-limit entries older than 24 hours
+    rl_deleted = await db.cleanup_old_rate_limits(max_age_hours=24)
+    if rl_deleted:
+        logger.info(f"Cleaned up {rl_deleted} stale rate-limit entry/entries")
 
 
 async def post_init(application):
@@ -230,6 +237,9 @@ def main():
             CONFIRMING: [
                 CallbackQueryHandler(handle_report_confirm, pattern="^report_confirm$"),
                 CallbackQueryHandler(handle_report_cancel, pattern="^report_cancel$"),
+            ],
+            ConversationHandler.TIMEOUT: [
+                MessageHandler(filters.ALL, conversation_timeout),
             ],
         },
         fallbacks=[

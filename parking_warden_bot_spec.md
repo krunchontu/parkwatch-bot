@@ -23,7 +23,7 @@ ParkWatch SG is a Telegram bot that crowdsources real-time parking warden sighti
 | `/feedback <message>` | Send feedback to admins | Relay message, confirm to user |
 | `/help` | Show all commands | Display help text |
 
-## Admin Commands (Phases 8–11, including completed Phase 11 operations)
+## Admin Commands (Phases 8–11.6, including completed Phase 11 operations)
 
 Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
 
@@ -574,7 +574,7 @@ Data is stored in 8 tables with 7 indexes. Tables are created automatically on s
 
 ```sql
 -- User accounts, report counts, and warning tracking
-users (telegram_id BIGINT PK, username TEXT, report_count INT, warnings INT DEFAULT 0, created_at TIMESTAMP)
+users (telegram_id BIGINT PK, username TEXT, first_name TEXT, report_count INT, warnings INT DEFAULT 0, created_at TIMESTAMP)
 
 -- Zone subscriptions (many-to-many)
 subscriptions (telegram_id BIGINT, zone_name TEXT, created_at TIMESTAMP, PK(telegram_id, zone_name))

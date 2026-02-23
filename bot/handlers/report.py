@@ -342,7 +342,7 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
             return ConversationHandler.END
 
     # Update user stats
-    await db.ensure_user(user_id, username)
+    await db.ensure_user(user_id, username, first_name=update.effective_user.first_name)
     report_count = await db.increment_report_count(user_id)
     badge = get_reporter_badge(report_count)
 
@@ -432,6 +432,18 @@ async def cancel_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_pending_report(context.user_data)
     await update.message.reply_text("\u274c Report cancelled.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
+
+
+async def conversation_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Notify the user when the report flow times out due to inactivity."""
+    clear_pending_report(context.user_data)
+    if update and update.effective_chat:
+        with contextlib.suppress(Exception):
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="\u23f0 Your report session expired due to inactivity.\nUse /report to start again.",
+                reply_markup=ReplyKeyboardRemove(),
+            )
 
 
 async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, is_positive: bool):

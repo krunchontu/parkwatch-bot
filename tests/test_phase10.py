@@ -206,7 +206,7 @@ class TestFeedbackCommand:
         assert detail.endswith("...")
 
     def test_feedback_with_no_admins_configured(self):
-        """Should still confirm to user even if no admins are configured."""
+        """Should report delivery failure when no admins are configured."""
         update = self._make_update(text="/feedback hello")
         context = MagicMock()
         context.bot.send_message = AsyncMock()
@@ -216,9 +216,9 @@ class TestFeedbackCommand:
 
         # No admin messages sent
         context.bot.send_message.assert_not_called()
-        # But user gets confirmation
+        # User gets delivery failure notice
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "Thanks" in reply_text
+        assert "could not be delivered" in reply_text.lower()
 
     def test_feedback_includes_user_badge(self):
         """Admin notification should include the user's reporter badge."""

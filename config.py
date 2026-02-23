@@ -1,8 +1,11 @@
+import logging
 import os
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # Railway injects DATABASE_PRIVATE_URL for internal networking (faster, no egress cost).
@@ -41,8 +44,12 @@ _admin_ids_raw = os.getenv("ADMIN_USER_IDS", "")
 if _admin_ids_raw.strip():
     for _id in _admin_ids_raw.split(","):
         _id = _id.strip()
+        if not _id:
+            continue
         if _id.isdigit():
             ADMIN_USER_IDS.add(int(_id))
+        else:
+            logger.warning("Ignoring non-numeric ADMIN_USER_IDS entry: %r", _id)
 
 # --- Phase 9: User Management & Content Moderation ---
 
@@ -57,4 +64,4 @@ MAINTENANCE_MESSAGE = os.getenv(
 )
 
 # Bot version (for health check and Sentry release tracking)
-BOT_VERSION = "1.4.0"
+BOT_VERSION = "1.5.0"

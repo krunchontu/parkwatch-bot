@@ -1,5 +1,6 @@
 """Moderation utilities for ParkWatch SG."""
 
+import functools
 import logging
 
 from telegram import Update
@@ -20,6 +21,7 @@ def ban_check(func):
     Banned users receive a static restriction message. Does NOT apply to /start.
     """
 
+    @functools.wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         db = get_db()
