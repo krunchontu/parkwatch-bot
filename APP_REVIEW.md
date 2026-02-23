@@ -175,29 +175,10 @@ The broadcast system is in-process with no persistence. If the bot process crash
 - **Discord bots (MEE6, Carl-bot)**: Worker-based broadcast with persistent job state and per-guild delivery tracking.
 - **WhatsApp Business API**: Requires explicit delivery receipts per message.
 
-### 2. `database.py` Is a 1,067-Line God Module — ARCHITECTURAL DEBT
-**File:** `bot/database.py`
+### 2. ~~`database.py` God Module~~ — RESOLVED (Phase 11.8)
+**Status:** Resolved in Phase 11.8.
 
-This single file contains:
-- Connection management
-- Table creation
-- Subscription CRUD
-- User CRUD
-- Sighting CRUD
-- Feedback operations
-- Admin audit operations
-- Global statistics queries
-- User/zone lookup queries
-- Ban management
-- Warning management
-- Runtime config operations
-- Data purge operations
-- Export operations
-- Rate limit operations
-
-At 50+ methods, this is the largest file and a maintenance bottleneck. Any change to one domain (e.g., adding a migration) requires reading through 1,000+ lines of unrelated queries.
-
-**Best practice:** Split into `repositories/` with `UserRepository`, `SightingRepository`, `AdminRepository`, etc.
+`database.py` was split from 1,147 lines into 5 focused repository modules under `bot/repositories/`: `UserRepository`, `SightingRepository`, `FeedbackRepository`, `AdminRepository`, `ConfigRepository`. The `Database` class is now a thin facade (~260 lines) with connection management, query helpers, and `__getattr__` delegation for full backward compatibility. 56 new tests validate the split. A PostgreSQL-specific test suite was also added.
 
 ### 3. No Observability Beyond Logs — OPERATIONAL GAP
 The bot has structured logging but zero metrics:
@@ -363,9 +344,9 @@ ParkWatch is essentially "Waze for parking wardens" — crowdsourced real-time a
 - `ADMIN_USER_IDS` parsing silently ignores invalid entries — should at minimum log a warning.
 - `DATABASE_PRIVATE_URL` priority over `DATABASE_URL` is Railway-specific but well-documented.
 
-### `bot/database.py` (1,067 lines)
-- **Largest file — needs splitting.** 50+ methods across 7+ domains.
-- `create_tables()` uses string replacement for PostgreSQL compatibility (`database.py:212-222`). This is fragile — a column named with "TIMESTAMP" in its name would get mangled. The `CURRENT_TS_HOLD` workaround proves the fragility.
+### `bot/database.py` (~260 lines) + `bot/repositories/` (5 modules)
+- ~~**Largest file — needs splitting.** 50+ methods across 7+ domains.~~ ✅ Resolved (Phase 11.8): Split into 5 repository modules (`UserRepository`, `SightingRepository`, `FeedbackRepository`, `AdminRepository`, `ConfigRepository`) with `__getattr__` facade for backward compatibility. `database.py` is now a thin connection/query/DDL layer.
+- `create_tables()` uses string replacement for PostgreSQL compatibility. This is fragile — a column named with "TIMESTAMP" in its name would get mangled. The `CURRENT_TS_HOLD` workaround proves the fragility.
 - `cleanup_old_sightings()` PostgreSQL path parses the row count from the command status string (`result.split()[-1]`). Fragile but functional.
 - `export_stats()` imports `json` inside the function body. Minor but inconsistent with module-level imports elsewhere.
 - `purge_user_data()` SQLite path uses explicit `BEGIN`/`COMMIT`/`ROLLBACK`. The `_execute()` helper auto-commits, but purge bypasses it for transactional safety. This inconsistency could confuse maintainers.
@@ -450,7 +431,7 @@ All findings have been folded into [`IMPROVEMENTS.md`](IMPROVEMENTS.md) as imple
 | Category | Score | Reasoning |
 |----------|-------|-----------|
 | **Product Usefulness** | 8.5/10 | Clear value prop, comprehensive zones, complete user flow. Missing media, leaderboards, and richer engagement. |
-| **Code Quality** | 8/10 | Async-first, typed, linted, tested. God module in database.py. Decorator inconsistency. |
+| **Code Quality** | 8.5/10 | Async-first, typed, linted, tested. Repository pattern split (Phase 11.8). Minor decorator inconsistency remains. |
 | **Architecture** | 7.5/10 | Clean separation of concerns. Dual-DB abstraction works. No horizontal scaling path. In-memory conversation state. |
 | **Security** | 8/10 | Parameterized queries, input sanitization, UUID validation, admin auth. No audit integrity, basic secrets management. |
 | **Testing** | 7.5/10 | 335 tests, CI across 3 Python versions. No PostgreSQL tests, no load tests, no coverage reporting. |

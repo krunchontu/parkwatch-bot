@@ -23,7 +23,7 @@ ParkWatch SG is a Telegram bot that crowdsources real-time parking warden sighti
 | `/feedback <message>` | Send feedback to admins | Relay message, confirm to user |
 | `/help` | Show all commands | Display help text |
 
-## Admin Commands (Phases 8–11.6, including completed Phase 11 operations)
+## Admin Commands (Phases 8–11.8, including completed Phase 11 operations)
 
 Requires `ADMIN_USER_IDS` env var. Non-admin users see "Unknown command".
 
@@ -570,7 +570,7 @@ Set `WEBHOOK_URL` to enable webhook mode. Structured JSON logging available via 
 
 ### Database Schema
 
-Data is stored in 8 tables with 7 indexes. Tables are created automatically on startup via `bot/database.py`. Schema changes are tracked via Alembic migrations in `alembic/versions/`.
+Data is stored in 8 tables with 7 indexes. Tables are created automatically on startup via `bot/database.py`. Business logic queries are split into 5 repository modules under `bot/repositories/` (Phase 11.8). Schema changes are tracked via Alembic migrations in `alembic/versions/`.
 
 ```sql
 -- User accounts, report counts, and warning tracking

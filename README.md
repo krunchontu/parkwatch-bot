@@ -42,7 +42,7 @@ python -m bot.main
 
 You should see:
 ```
-2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.6.0 starting in polling mode
+2026-XX-XX XX:XX:XX - bot.main - INFO - ParkWatch SG Bot v1.7.0 starting in polling mode
 2026-XX-XX XX:XX:XX - bot.health - INFO - Health check server started on port 8080 (GET /health)
 ```
 
@@ -140,7 +140,7 @@ For detailed user flows, message formats, reputation rules, and zone lists, see 
 | `MAX_REPORTS_PER_HOUR` | 3 | Rate limit per user |
 | `DUPLICATE_WINDOW_MINUTES` | 5 | Time window for duplicate detection |
 | `DUPLICATE_RADIUS_METERS` | 200 | GPS radius for duplicate detection (Haversine) |
-| `BOT_VERSION` | 1.6.0 | Version reported in health check & Sentry |
+| `BOT_VERSION` | 1.7.0 | Version reported in health check & Sentry |
 
 ---
 
@@ -152,14 +152,21 @@ For detailed user flows, message formats, reputation rules, and zone lists, see 
 parkwatch-bot/
 ├── bot/
 │   ├── main.py                  # Application wiring, handler registration, entrypoint
-│   ├── database.py              # Dual-driver DB abstraction (SQLite/PostgreSQL)
+│   ├── database.py              # Dual-driver DB facade (SQLite/PostgreSQL) + connection mgmt
+│   ├── repositories/            # Repository modules (Phase 11.8 split)
+│   │   ├── base.py              # BaseRepository with shared DB access helpers
+│   │   ├── user.py              # UserRepository (users, subscriptions, warnings)
+│   │   ├── sighting.py          # SightingRepository (CRUD, cleanup, moderation)
+│   │   ├── feedback.py          # FeedbackRepository (votes, accuracy, rate limits)
+│   │   ├── admin.py             # AdminRepository (audit, stats, banning, data mgmt)
+│   │   └── config.py            # ConfigRepository (runtime config overrides)
 │   ├── zones.py                 # Zone data (80 zones, 6 regions, coordinates)
 │   ├── models.py                # TypedDict data models for DB return types
 │   ├── utils.py                 # Pure helpers (haversine, badges, sanitization)
 │   ├── handlers/
 │   │   ├── user.py              # User commands (/start, /subscribe, /help, etc.)
 │   │   ├── report.py            # Report flow (ConversationHandler), /recent
-│   │   └── admin.py             # Admin commands (/admin router + subcommands)
+│   │   └── admin/               # Admin commands (/admin router + subcommands)
 │   ├── services/
 │   │   ├── notifications.py     # Alert broadcast with blocked-user cleanup
 │   │   ├── moderation.py        # ban_check decorator, auto-flag logic
@@ -319,7 +326,7 @@ sudo systemctl enable parkwatch && sudo systemctl start parkwatch
 ## Further Reading
 
 - [`parking_warden_bot_spec.md`](parking_warden_bot_spec.md) — Product specification: user flows, message formats, reputation system, zone coverage, growth strategy
-- [`IMPROVEMENTS.md`](IMPROVEMENTS.md) — Improvement roadmap (Phases 12–15) and project file reference
+- [`IMPROVEMENTS.md`](IMPROVEMENTS.md) — Improvement roadmap (Phases 12–15) and completed phase summary
 - [`APP_REVIEW.md`](APP_REVIEW.md) — Full codebase audit: security, architecture, world-class bot comparison (7.5/10)
 
 ---
