@@ -170,3 +170,19 @@ Next Steps:
 2. Phase 12 growth features can begin after 11.8.
 Blockers:
 - None.
+
+[UPDATE]
+Phase: 3.3
+Completed:
+- Implemented Phase 11.8 (Database Refactor) — all 3 items completed.
+- 11.8.1: Split `database.py` (1,147 lines) into 5 focused repository modules under `bot/repositories/`: `UserRepository` (users, subscriptions, warnings), `SightingRepository` (CRUD, cleanup, moderation), `FeedbackRepository` (feedback, accuracy, rate limits), `AdminRepository` (audit, stats, banning, data management), `ConfigRepository` (runtime config overrides). `BaseRepository` provides shared DB access helpers. `Database` class composes all repositories and delegates via `__getattr__` for full backward compatibility — no consumer changes required.
+- 11.8.2: Added PostgreSQL-specific test suite (`tests/test_phase11_8_postgresql.py`) with 26 tests covering: driver detection, placeholder syntax, DDL transformations (AUTOINCREMENT→SERIAL, TIMESTAMP→TIMESTAMPTZ, CURRENT_TIMESTAMP preservation), ON CONFLICT upsert syntax, RETURNING clause usage, GREATEST vs MAX, IN-clause placeholder generation, DELETE result parsing, and pool health checks. All tests use mocking since PostgreSQL is not available in CI.
+- 11.8.3: Added repository split test suite (`tests/test_phase11_8_repositories.py`) with 30 tests covering: repository class structure, Database composition, `__getattr__` delegation, integration tests for all 5 repositories via facade and direct access, cross-repository operations, and code modularity verification. Total: 56 new tests.
+- `database.py` reduced from 1,147 lines to ~260 lines (connection mgmt + query helpers + table creation + facade).
+- All 200 non-telegram tests pass (144 existing + 56 new). Ruff check, ruff format, and mypy all pass with 0 errors.
+- Bumped BOT_VERSION to 1.7.0. Updated all docs: IMPROVEMENTS.md, README.md, APP_REVIEW.md, memlog.
+Next Steps:
+1. Proceed to Phase 12 growth features.
+2. New code can use `db.users.method()`, `db.sightings.method()` etc. for explicit repository access.
+Blockers:
+- None.

@@ -68,4 +68,4 @@ PERSISTENCE_PATH = os.getenv("PERSISTENCE_PATH", "parkwatch_persistence")
 CLEANUP_INTERVAL_HOURS = int(os.getenv("CLEANUP_INTERVAL_HOURS", "6"))
 
 # Bot version (for health check and Sentry release tracking)
-BOT_VERSION = "1.6.0"
+BOT_VERSION = "1.7.0"

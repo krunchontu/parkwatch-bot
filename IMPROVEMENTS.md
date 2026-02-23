@@ -1,8 +1,8 @@
 # ParkWatch SG — Improvement Plan
 
-**Last updated:** 2026-02-23 (Phase 11.7 complete)
-**Current version:** 1.6.0 · **Tests:** 382 passing · **Phases 1–11.7 complete**
-**Roadmap:** 11.8 → 12 → 13 → 14 → 15
+**Last updated:** 2026-02-23 (Phase 11.8 complete)
+**Current version:** 1.7.0 · **Tests:** 438 passing · **Phases 1–11.8 complete**
+**Roadmap:** 12 → 13 → 14 → 15
 
 ---
 
@@ -26,22 +26,13 @@ All items below are implemented, tested, and verified in CI.
 | 11.5 | Tech Debt | `/start` menu fix, `ban_check` callback safety, broadcast concurrency, TypedDict models, handler tests, rate limit decoupling |
 | 11.6 | Audit Quick Fixes | `first_name` column, `ban_check` wraps, rate-limit cleanup, admin ID warning, feedback delivery outcome, conversation timeout, 21 new tests |
 | 11.7 | Reliability Hardening | Connection pool health checks, PicklePersistence, configurable cleanup interval, exponential backoff, GPS bounds validation, 26 new tests |
-
----
-
-## Phase 11.8: Database Refactor
-
-Split the `database.py` god module (1,067 lines) **before** growth features add more queries to it.
-
-- [ ] **11.8.1** Split `database.py` into repository modules: `UserRepository`, `SightingRepository`, `FeedbackRepository`, `AdminRepository`, `ConfigRepository`
-- [ ] **11.8.2** Add PostgreSQL-specific test suite (currently all tests use SQLite)
-- [ ] **11.8.3** Tests for all 11.8 items; CI must pass
+| 11.8 | Database Refactor | Repository pattern split (5 modules), PostgreSQL-specific test suite, `__getattr__` backward-compat facade, 56 new tests |
 
 ---
 
 ## Phase 12: Growth Features
 
-**Depends on:** Phases 11.7–11.8. Growth features land on the hardened, well-structured base.
+**Depends on:** Phases 11.7–11.8 (complete). Growth features land on the hardened, well-structured base.
 
 **Priority order:** 12.1 → 12.2 → 12.3 → 12.4
 
