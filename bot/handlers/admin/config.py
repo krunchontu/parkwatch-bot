@@ -7,6 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from ...database import get_db
+from ...services.notifications import broadcast_message
 from ...services.runtime_settings import RuntimeSettingsError, get_runtime_settings
 
 logger = logging.getLogger(__name__)
@@ -93,15 +94,28 @@ async def admin_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         if not pending:
             await update.message.reply_text("No pending maintenance announcement.")
             return
-        sent = 0
-        for uid in pending["recipient_ids"]:
+
+        announce_text = f"\U0001f4e3 {pending['message']}"
+        sent, failed, blocked = await broadcast_message(
+            context.bot, pending["recipient_ids"], announce_text
+        )
+
+        # Clean up subscriptions for users who blocked the bot
+        for uid in blocked:
             with contextlib.suppress(Exception):
-                await context.bot.send_message(chat_id=uid, text=f"\U0001f4e3 {pending['message']}")
-                sent += 1
+                await db.clear_subscriptions(uid)
+
         await settings.set_override("MAINTENANCE_MODE", "true", admin_id)
         await settings.set_override("MAINTENANCE_MESSAGE", pending["message"], admin_id)
-        await db.log_admin_action(admin_id, "maintenance_on", detail=f"announce_sent={sent}")
-        await update.message.reply_text(f"\u2705 Maintenance mode enabled. Announcement sent to {sent} users.")
+        detail = f"announce_sent={sent}, failed={failed}, blocked={len(blocked)}"
+        await db.log_admin_action(admin_id, "maintenance_on", detail=detail)
+
+        report = f"\u2705 Maintenance mode enabled. Announcement sent to {sent} user(s)."
+        if failed > 0:
+            report += f"\n\u26a0\ufe0f {failed} delivery failure(s)."
+            if blocked:
+                report += f" ({len(blocked)} blocked user(s) cleaned up.)"
+        await update.message.reply_text(report)
         return
 
     if message.startswith(announce_prefix):
