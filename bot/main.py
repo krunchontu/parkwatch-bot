@@ -12,7 +12,6 @@ from telegram.ext import (
     ConversationHandler,
     InlineQueryHandler,
     MessageHandler,
-    PicklePersistence,
     filters,
 )
 
@@ -76,6 +75,7 @@ from .handlers.user import (
 )
 from .health import start_health_server, stop_health_server
 from .logging_config import setup_logging
+from .persistence import JsonFilePersistence
 from .services.maintenance import is_maintenance_enabled
 from .services.runtime_settings import get_runtime_settings
 
@@ -203,8 +203,10 @@ def main():
     # Initialize Sentry error tracking (if configured)
     _init_sentry()
 
-    # Create application with lifecycle hooks and conversation persistence
-    persistence = PicklePersistence(filepath=PERSISTENCE_PATH)
+    # Create application with lifecycle hooks and conversation persistence.
+    # Uses JSON-backed persistence instead of PicklePersistence to avoid
+    # arbitrary code execution risk from pickle deserialization.
+    persistence = JsonFilePersistence(filepath=PERSISTENCE_PATH)
     app = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
