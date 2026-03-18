@@ -46,8 +46,9 @@ class FeedbackRepository(BaseRepository):
         Raises ValueError if user already submitted the same vote.
         """
         if self.driver == "sqlite":
-            # SQLite: use the single connection; manual transaction via commit at end
+            # SQLite: use BEGIN IMMEDIATE to prevent concurrent interleaving
             try:
+                await self._conn.execute("BEGIN IMMEDIATE")
                 previous_row = await self._conn.execute(
                     "SELECT vote FROM feedback WHERE sighting_id = ? AND user_id = ?", (sighting_id, user_id)
                 )

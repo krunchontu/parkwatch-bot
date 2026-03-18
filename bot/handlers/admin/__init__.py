@@ -1,5 +1,6 @@
 """Admin command handlers for ParkWatch SG."""
 
+import functools
 import logging
 
 from telegram import Update
@@ -23,6 +24,7 @@ def admin_only(func):
     to reveal that admin commands exist.
     """
 
+    @functools.wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         if user_id not in ADMIN_USER_IDS:

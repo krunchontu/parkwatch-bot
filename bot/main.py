@@ -1,6 +1,7 @@
 """ParkWatch SG Bot — application wiring and entrypoint."""
 
 import contextlib
+import hashlib
 import logging
 
 from telegram import Update
@@ -292,11 +293,15 @@ def main():
             BOT_VERSION,
             PORT,
         )
+        # Use a hashed token for the URL path to avoid exposing the raw bot token
+        # in server access logs, load balancer logs, and monitoring tools.
+        webhook_path = hashlib.sha256(TELEGRAM_BOT_TOKEN.encode()).hexdigest()
         app.run_webhook(
             listen="0.0.0.0",
             port=PORT,
-            url_path=f"webhook/{TELEGRAM_BOT_TOKEN}",
-            webhook_url=f"{WEBHOOK_URL}/webhook/{TELEGRAM_BOT_TOKEN}",
+            url_path=f"webhook/{webhook_path}",
+            webhook_url=f"{WEBHOOK_URL}/webhook/{webhook_path}",
+            secret_token=webhook_path[:32],
             allowed_updates=Update.ALL_TYPES,
         )
     else:

@@ -28,7 +28,7 @@ from ..utils import (
     parse_callback_data,
     sanitize_description,
 )
-from ..zones import ZONE_COORDS, ZONES
+from ..zones import ZONE_COORDS, ZONES, find_zone
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return CHOOSING_METHOD
 
 
+@ban_check
 async def report_from_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle 'Report a Sighting' button from /start menu.
 
@@ -184,6 +185,10 @@ async def handle_report_zone(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
 
     zone_name = query.data.replace("report_zone_", "")
+    # Validate zone name against known zones to prevent crafted callback data
+    if not find_zone(zone_name):
+        await query.edit_message_text("Invalid zone. Please try again with /report.")
+        return ConversationHandler.END
     context.user_data["pending_report_zone"] = zone_name
     context.user_data["pending_report_lat"] = None
     context.user_data["pending_report_lng"] = None
@@ -270,6 +275,7 @@ async def handle_description_input(update: Update, context: ContextTypes.DEFAULT
     return CONFIRMING
 
 
+@ban_check
 @maintenance_conversation_check
 async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Confirm and broadcast the report."""
@@ -313,9 +319,11 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
     for existing in recent_sightings:
         existing_lat = existing.get("lat")
         existing_lng = existing.get("lng")
-        has_both_gps = lat is not None and lng is not None and existing_lat is not None and existing_lng is not None
+        new_has_gps = lat is not None and lng is not None
+        existing_has_gps = existing_lat is not None and existing_lng is not None
 
-        if has_both_gps:
+        if new_has_gps and existing_has_gps:
+            # Both have GPS — compare distance
             dist = haversine_meters(lat, lng, existing_lat, existing_lng)
             if dist > duplicate_radius_meters:
                 continue  # Far enough apart — not a duplicate
@@ -328,8 +336,11 @@ async def handle_report_confirm(update: Update, context: ContextTypes.DEFAULT_TY
                 f"Check /recent for current sightings."
             )
             return ConversationHandler.END
+        elif new_has_gps or existing_has_gps:
+            # Only one side has GPS — can't determine proximity, allow the report
+            continue
         else:
-            # No GPS on one or both — fall back to zone-level duplicate
+            # Neither has GPS — fall back to zone-level duplicate
             mins_ago = int((now - existing["reported_at"]).total_seconds() / 60)
             await query.edit_message_text(
                 f"\u26a0\ufe0f Duplicate report.\n\n"
