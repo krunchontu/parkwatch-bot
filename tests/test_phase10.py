@@ -604,11 +604,16 @@ class TestStartMenu:
         update.callback_query.answer = AsyncMock()
         update.callback_query.message.delete = AsyncMock()
         update.effective_chat.id = 100
+        update.effective_user.id = 100
 
         context = MagicMock()
         context.bot.send_message = AsyncMock()
 
-        result = asyncio.get_event_loop().run_until_complete(report_from_start(update, context))
+        mock_db = MagicMock()
+        mock_db.is_banned = AsyncMock(return_value=False)
+
+        with patch("bot.services.moderation.get_db", return_value=mock_db):
+            result = asyncio.get_event_loop().run_until_complete(report_from_start(update, context))
 
         # Should delete the /start menu message
         update.callback_query.message.delete.assert_called_once()

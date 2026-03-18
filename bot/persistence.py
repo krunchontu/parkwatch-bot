@@ -18,6 +18,14 @@ from telegram.ext import DictPersistence
 
 logger = logging.getLogger(__name__)
 
+_JSON_KEYS = (
+    "user_data_json",
+    "chat_data_json",
+    "bot_data_json",
+    "conversations_json",
+    "callback_data_json",
+)
+
 
 class JsonFilePersistence(DictPersistence):
     """DictPersistence subclass that persists state to a JSON file.
@@ -33,21 +41,18 @@ class JsonFilePersistence(DictPersistence):
         self._filepath = Path(filepath)
 
         # Load existing data from disk if available
-        user_data_json = ""
-        chat_data_json = ""
-        bot_data_json = ""
-        conversations_json = ""
-        callback_data_json = ""
-
+        loaded: dict[str, str] = {}
         if self._filepath.exists():
             try:
                 raw = self._filepath.read_text(encoding="utf-8")
                 data = json.loads(raw)
-                user_data_json = data.get("user_data_json", "") or ""
-                chat_data_json = data.get("chat_data_json", "") or ""
-                bot_data_json = data.get("bot_data_json", "") or ""
-                conversations_json = data.get("conversations_json", "") or ""
-                callback_data_json = data.get("callback_data_json", "") or ""
+                # Only use values that are non-empty strings and not the
+                # JSON literal "null" (which DictPersistence serialises for
+                # fields that were never populated).
+                for key in _JSON_KEYS:
+                    val = data.get(key)
+                    if isinstance(val, str) and val and val != "null":
+                        loaded[key] = val
                 logger.info("Loaded persistence data from %s", self._filepath)
             except (json.JSONDecodeError, OSError) as exc:
                 logger.warning(
@@ -57,11 +62,11 @@ class JsonFilePersistence(DictPersistence):
                 )
 
         super().__init__(
-            user_data_json=user_data_json,
-            chat_data_json=chat_data_json,
-            bot_data_json=bot_data_json,
-            conversations_json=conversations_json,
-            callback_data_json=callback_data_json,
+            user_data_json=loaded.get("user_data_json", ""),
+            chat_data_json=loaded.get("chat_data_json", ""),
+            bot_data_json=loaded.get("bot_data_json", ""),
+            conversations_json=loaded.get("conversations_json", ""),
+            callback_data_json=loaded.get("callback_data_json", ""),
             **kwargs,
         )
 

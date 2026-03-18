@@ -36,8 +36,10 @@ class TestMaintenanceAnnounceConfirm:
         from bot.handlers.admin.config import admin_maintenance
 
         update, context = self._make_update_and_context(pending=None)
+        mock_db = make_mock_db()
 
-        _run(admin_maintenance(update, context, "confirm"))
+        with patch("bot.handlers.admin.config.get_db", return_value=mock_db):
+            _run(admin_maintenance(update, context, "on confirm"))
 
         update.message.reply_text.assert_called_once()
         text = update.message.reply_text.call_args[0][0]
@@ -64,7 +66,7 @@ class TestMaintenanceAnnounceConfirm:
         ):
             mock_broadcast.return_value = (3, 0, [])  # all sent, none failed
 
-            _run(admin_maintenance(update, context, "confirm"))
+            _run(admin_maintenance(update, context, "on confirm"))
 
             # broadcast_message was called with correct args
             mock_broadcast.assert_called_once()
@@ -97,7 +99,7 @@ class TestMaintenanceAnnounceConfirm:
             # User 200 blocked the bot
             mock_broadcast.return_value = (2, 1, [200])
 
-            _run(admin_maintenance(update, context, "confirm"))
+            _run(admin_maintenance(update, context, "on confirm"))
 
         # Subscription cleanup was called for the blocked user
         mock_db.clear_subscriptions.assert_called_once_with(200)
@@ -124,7 +126,7 @@ class TestMaintenanceAnnounceConfirm:
             # 2 sent, 1 failed, 1 blocked
             mock_broadcast.return_value = (2, 2, [300])
 
-            _run(admin_maintenance(update, context, "confirm"))
+            _run(admin_maintenance(update, context, "on confirm"))
 
         reply_text = update.message.reply_text.call_args[0][0]
         assert "2 user(s)" in reply_text  # sent count
@@ -152,7 +154,7 @@ class TestMaintenanceAnnounceConfirm:
         ):
             mock_broadcast.return_value = (1, 0, [])
 
-            _run(admin_maintenance(update, context, "confirm"))
+            _run(admin_maintenance(update, context, "on confirm"))
 
         # Verify settings were set
         calls = mock_settings.set_override.call_args_list
@@ -184,7 +186,7 @@ class TestMaintenanceAnnounceConfirm:
         ):
             mock_broadcast.return_value = (1, 1, [200])
 
-            _run(admin_maintenance(update, context, "confirm"))
+            _run(admin_maintenance(update, context, "on confirm"))
 
         # Check audit log call
         mock_db.log_admin_action.assert_called_once()
@@ -215,7 +217,7 @@ class TestMaintenanceAnnounceConfirm:
         ):
             mock_broadcast.return_value = (2, 0, [])
 
-            _run(admin_maintenance(update, context, "confirm"))
+            _run(admin_maintenance(update, context, "on confirm"))
 
         reply_text = update.message.reply_text.call_args[0][0]
         assert "2 user(s)" in reply_text

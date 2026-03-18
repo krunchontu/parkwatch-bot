@@ -102,8 +102,10 @@ class TestReportFromStart:
 
         update = make_callback_update(callback_data="start_report")
         context = make_context()
+        mock_db = make_mock_db()
 
-        result = _run(report_from_start(update, context))
+        with patch("bot.services.moderation.get_db", return_value=mock_db):
+            result = _run(report_from_start(update, context))
 
         update.callback_query.answer.assert_called_once()
         update.callback_query.message.delete.assert_called_once()

@@ -67,4 +67,5 @@ def make_mock_db(**overrides):
     db.get_sighting = AsyncMock(return_value=overrides.get("get_sighting"))
     db.get_sighting_reporter = AsyncMock(return_value=overrides.get("get_sighting_reporter"))
     db.apply_feedback = AsyncMock(return_value=overrides.get("apply_feedback"))
+    db.calculate_accuracy_batch = AsyncMock(return_value=overrides.get("calculate_accuracy_batch", {}))
     return db
