@@ -207,3 +207,16 @@ class FeedbackRepository(BaseRepository):
             (user_id, since),
         )
         return row["cnt"] if row else 0
+
+    async def count_feedback_votes_since(self, user_id: int, since: datetime) -> int:
+        """Count feedback vote actions by a user since a given time.
+
+        Tracks vote submissions and vote changes (pos->neg, neg->pos) to
+        prevent vote-flip spam.  Uses 'feedback_vote' action in user_rate_limits.
+        """
+        row = await self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM user_rate_limits "
+            f"WHERE user_id = {self._ph(1)} AND action = 'feedback_vote' AND created_at > {self._ph(2)}",
+            (user_id, since),
+        )
+        return row["cnt"] if row else 0

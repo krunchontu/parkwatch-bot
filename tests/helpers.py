@@ -62,7 +62,9 @@ def make_mock_db(**overrides):
     db.log_admin_action = AsyncMock()
     db.record_rate_limit_event = AsyncMock()
     db.count_user_feedback_since = AsyncMock(return_value=overrides.get("count_user_feedback_since", 0))
+    db.count_feedback_votes_since = AsyncMock(return_value=overrides.get("count_feedback_votes_since", 0))
     db.get_zone_subscribers = AsyncMock(return_value=overrides.get("get_zone_subscribers", []))
     db.get_sighting = AsyncMock(return_value=overrides.get("get_sighting"))
     db.get_sighting_reporter = AsyncMock(return_value=overrides.get("get_sighting_reporter"))
+    db.apply_feedback = AsyncMock(return_value=overrides.get("apply_feedback"))
     return db
