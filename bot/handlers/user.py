@@ -73,6 +73,11 @@ async def _build_recent_text(user_id: int) -> str:
             f"Your zones: {', '.join(sorted(user_zones))}"
         )
 
+    # Pre-fetch accuracy for all reporters in a single batch query
+    # instead of N individual queries inside the loop (N+1 elimination).
+    reporter_ids = [s["reporter_id"] for s in relevant if s.get("reporter_id")]
+    accuracy_map = await db.calculate_accuracy_batch(reporter_ids) if reporter_ids else {}
+
     msg = "\U0001f4cb Recent sightings in your zones:\n"
     for s in relevant:
         reported_at = s["reported_at"]
@@ -97,7 +102,7 @@ async def _build_recent_text(user_id: int) -> str:
         badge = s.get("reporter_badge", "\U0001f195 New")
         accuracy_indicator = ""
         if reporter_id:
-            acc_score, total_fb = await db.calculate_accuracy(reporter_id)
+            acc_score, total_fb = accuracy_map.get(reporter_id, (0.0, 0))
             accuracy_indicator = get_accuracy_indicator(acc_score, total_fb)
         msg += f"   \U0001f464 {badge}{(' ' + accuracy_indicator) if accuracy_indicator else ''}\n"
 

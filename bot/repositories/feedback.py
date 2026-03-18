@@ -46,8 +46,9 @@ class FeedbackRepository(BaseRepository):
         Raises ValueError if user already submitted the same vote.
         """
         if self.driver == "sqlite":
-            # SQLite: use the single connection; manual transaction via commit at end
+            # SQLite: use BEGIN IMMEDIATE to prevent concurrent interleaving
             try:
+                await self._conn.execute("BEGIN IMMEDIATE")
                 previous_row = await self._conn.execute(
                     "SELECT vote FROM feedback WHERE sighting_id = ? AND user_id = ?", (sighting_id, user_id)
                 )
@@ -157,6 +158,50 @@ class FeedbackRepository(BaseRepository):
             return 0.0, 0
         return pos / total, total
 
+    async def calculate_accuracy_batch(self, user_ids: list[int]) -> dict[int, tuple[float, int]]:
+        """Calculate accuracy scores for multiple reporters in a single query.
+
+        Returns a dict mapping user_id -> (accuracy_score, total_feedback_count).
+        Users not found or with no feedback get (0.0, 0).
+        """
+        if not user_ids:
+            return {}
+        unique_ids = list(set(user_ids))
+        if self.driver == "sqlite":
+            placeholders = ", ".join("?" for _ in unique_ids)
+            sql = (
+                f"SELECT reporter_id, "
+                f"COALESCE(SUM(feedback_positive), 0) AS pos, "
+                f"COALESCE(SUM(feedback_negative), 0) AS neg "
+                f"FROM sightings WHERE reporter_id IN ({placeholders}) "
+                f"GROUP BY reporter_id"
+            )
+            params = tuple(unique_ids)
+        else:
+            placeholders = ", ".join(f"${i}" for i in range(1, len(unique_ids) + 1))
+            sql = (
+                f"SELECT reporter_id, "
+                f"COALESCE(SUM(feedback_positive), 0) AS pos, "
+                f"COALESCE(SUM(feedback_negative), 0) AS neg "
+                f"FROM sightings WHERE reporter_id IN ({placeholders}) "
+                f"GROUP BY reporter_id"
+            )
+            params = tuple(unique_ids)
+        rows = await self._fetchall(sql, params)
+        result: dict[int, tuple[float, int]] = {}
+        for row in rows:
+            pos, neg = row["pos"], row["neg"]
+            total = pos + neg
+            if total == 0:
+                result[row["reporter_id"]] = (0.0, 0)
+            else:
+                result[row["reporter_id"]] = (pos / total, total)
+        # Fill in missing IDs with defaults
+        for uid in unique_ids:
+            if uid not in result:
+                result[uid] = (0.0, 0)
+        return result
+
     async def get_user_feedback_totals(self, user_id: int) -> tuple[int, int]:
         """Get total positive and negative feedback across all user's sightings."""
         row = await self._fetchone(
@@ -203,6 +248,19 @@ class FeedbackRepository(BaseRepository):
         row = await self._fetchone(
             f"SELECT COUNT(*) AS cnt FROM user_rate_limits "
             f"WHERE user_id = {self._ph(1)} AND action = 'user_feedback' AND created_at > {self._ph(2)}",
+            (user_id, since),
+        )
+        return row["cnt"] if row else 0
+
+    async def count_feedback_votes_since(self, user_id: int, since: datetime) -> int:
+        """Count feedback vote actions by a user since a given time.
+
+        Tracks vote submissions and vote changes (pos->neg, neg->pos) to
+        prevent vote-flip spam.  Uses 'feedback_vote' action in user_rate_limits.
+        """
+        row = await self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM user_rate_limits "
+            f"WHERE user_id = {self._ph(1)} AND action = 'feedback_vote' AND created_at > {self._ph(2)}",
             (user_id, since),
         )
         return row["cnt"] if row else 0

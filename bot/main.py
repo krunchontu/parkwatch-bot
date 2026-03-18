@@ -1,6 +1,7 @@
 """ParkWatch SG Bot — application wiring and entrypoint."""
 
 import contextlib
+import hashlib
 import logging
 
 from telegram import Update
@@ -11,7 +12,6 @@ from telegram.ext import (
     ConversationHandler,
     InlineQueryHandler,
     MessageHandler,
-    PicklePersistence,
     filters,
 )
 
@@ -75,6 +75,7 @@ from .handlers.user import (
 )
 from .health import start_health_server, stop_health_server
 from .logging_config import setup_logging
+from .persistence import JsonFilePersistence
 from .services.maintenance import is_maintenance_enabled
 from .services.runtime_settings import get_runtime_settings
 
@@ -202,8 +203,10 @@ def main():
     # Initialize Sentry error tracking (if configured)
     _init_sentry()
 
-    # Create application with lifecycle hooks and conversation persistence
-    persistence = PicklePersistence(filepath=PERSISTENCE_PATH)
+    # Create application with lifecycle hooks and conversation persistence.
+    # Uses JSON-backed persistence instead of PicklePersistence to avoid
+    # arbitrary code execution risk from pickle deserialization.
+    persistence = JsonFilePersistence(filepath=PERSISTENCE_PATH)
     app = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
@@ -292,11 +295,15 @@ def main():
             BOT_VERSION,
             PORT,
         )
+        # Use a hashed token for the URL path to avoid exposing the raw bot token
+        # in server access logs, load balancer logs, and monitoring tools.
+        webhook_path = hashlib.sha256(TELEGRAM_BOT_TOKEN.encode()).hexdigest()
         app.run_webhook(
             listen="0.0.0.0",
             port=PORT,
-            url_path=f"webhook/{TELEGRAM_BOT_TOKEN}",
-            webhook_url=f"{WEBHOOK_URL}/webhook/{TELEGRAM_BOT_TOKEN}",
+            url_path=f"webhook/{webhook_path}",
+            webhook_url=f"{WEBHOOK_URL}/webhook/{webhook_path}",
+            secret_token=webhook_path[:32],
             allowed_updates=Update.ALL_TYPES,
         )
     else:
