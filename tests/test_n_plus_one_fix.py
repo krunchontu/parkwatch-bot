@@ -64,30 +64,51 @@ class TestCalculateAccuracyBatchRepository:
 
         # Alice: 2 sightings, total 9pos + 1neg = 90% accuracy
         for i, sid in enumerate(["a1", "a2"]):
-            await db.add_sighting({
-                "id": sid, "zone": "Bugis", "description": "test",
-                "time": now - timedelta(minutes=i),
-                "reporter_id": 100, "reporter_name": "alice",
-                "reporter_badge": "New", "lat": None, "lng": None,
-            })
+            await db.add_sighting(
+                {
+                    "id": sid,
+                    "zone": "Bugis",
+                    "description": "test",
+                    "time": now - timedelta(minutes=i),
+                    "reporter_id": 100,
+                    "reporter_name": "alice",
+                    "reporter_badge": "New",
+                    "lat": None,
+                    "lng": None,
+                }
+            )
         await db._execute("UPDATE sightings SET feedback_positive = 5, feedback_negative = 0 WHERE id = ?", ("a1",))
         await db._execute("UPDATE sightings SET feedback_positive = 4, feedback_negative = 1 WHERE id = ?", ("a2",))
 
         # Bob: 1 sighting, 0 feedback
-        await db.add_sighting({
-            "id": "b1", "zone": "Orchard", "description": "test",
-            "time": now - timedelta(minutes=5),
-            "reporter_id": 200, "reporter_name": "bob",
-            "reporter_badge": "New", "lat": None, "lng": None,
-        })
+        await db.add_sighting(
+            {
+                "id": "b1",
+                "zone": "Orchard",
+                "description": "test",
+                "time": now - timedelta(minutes=5),
+                "reporter_id": 200,
+                "reporter_name": "bob",
+                "reporter_badge": "New",
+                "lat": None,
+                "lng": None,
+            }
+        )
 
         # Carol: 1 sighting, 1pos + 4neg = 20% accuracy
-        await db.add_sighting({
-            "id": "c1", "zone": "Tampines", "description": "test",
-            "time": now - timedelta(minutes=10),
-            "reporter_id": 300, "reporter_name": "carol",
-            "reporter_badge": "New", "lat": None, "lng": None,
-        })
+        await db.add_sighting(
+            {
+                "id": "c1",
+                "zone": "Tampines",
+                "description": "test",
+                "time": now - timedelta(minutes=10),
+                "reporter_id": 300,
+                "reporter_name": "carol",
+                "reporter_badge": "New",
+                "lat": None,
+                "lng": None,
+            }
+        )
         await db._execute("UPDATE sightings SET feedback_positive = 1, feedback_negative = 4 WHERE id = ?", ("c1",))
 
         result = await db.calculate_accuracy_batch([100, 200, 300])
@@ -118,12 +139,19 @@ class TestCalculateAccuracyBatchRepository:
     async def test_duplicate_ids_handled(self, db):
         """Duplicate user IDs in input don't cause issues."""
         await db.ensure_user(100, "alice")
-        await db.add_sighting({
-            "id": "s1", "zone": "Bugis", "description": "test",
-            "time": datetime.now(timezone.utc),
-            "reporter_id": 100, "reporter_name": "alice",
-            "reporter_badge": "New", "lat": None, "lng": None,
-        })
+        await db.add_sighting(
+            {
+                "id": "s1",
+                "zone": "Bugis",
+                "description": "test",
+                "time": datetime.now(timezone.utc),
+                "reporter_id": 100,
+                "reporter_name": "alice",
+                "reporter_badge": "New",
+                "lat": None,
+                "lng": None,
+            }
+        )
         await db._execute(
             "UPDATE sightings SET feedback_positive = 3, feedback_negative = 1 WHERE id = ?",
             ("s1",),
@@ -141,12 +169,19 @@ class TestCalculateAccuracyBatchRepository:
         now = datetime.now(timezone.utc)
         for uid, name in [(100, "alice"), (200, "bob")]:
             await db.ensure_user(uid, name)
-            await db.add_sighting({
-                "id": f"s{uid}", "zone": "Bugis", "description": "test",
-                "time": now,
-                "reporter_id": uid, "reporter_name": name,
-                "reporter_badge": "New", "lat": None, "lng": None,
-            })
+            await db.add_sighting(
+                {
+                    "id": f"s{uid}",
+                    "zone": "Bugis",
+                    "description": "test",
+                    "time": now,
+                    "reporter_id": uid,
+                    "reporter_name": name,
+                    "reporter_badge": "New",
+                    "lat": None,
+                    "lng": None,
+                }
+            )
         await db._execute("UPDATE sightings SET feedback_positive = 7, feedback_negative = 3 WHERE id = ?", ("s100",))
         await db._execute("UPDATE sightings SET feedback_positive = 2, feedback_negative = 8 WHERE id = ?", ("s200",))
 
@@ -174,22 +209,37 @@ class TestBuildRecentTextNoPlusOne:
         now = datetime.now(timezone.utc)
         sightings = [
             {
-                "zone": "Bugis", "reported_at": now - timedelta(minutes=2),
-                "description": "Near MRT", "lat": None, "lng": None,
-                "reporter_id": 100, "reporter_badge": "New",
-                "feedback_positive": 3, "feedback_negative": 1,
+                "zone": "Bugis",
+                "reported_at": now - timedelta(minutes=2),
+                "description": "Near MRT",
+                "lat": None,
+                "lng": None,
+                "reporter_id": 100,
+                "reporter_badge": "New",
+                "feedback_positive": 3,
+                "feedback_negative": 1,
             },
             {
-                "zone": "Orchard", "reported_at": now - timedelta(minutes=8),
-                "description": "Outside mall", "lat": 1.3, "lng": 103.8,
-                "reporter_id": 200, "reporter_badge": "Regular",
-                "feedback_positive": 0, "feedback_negative": 0,
+                "zone": "Orchard",
+                "reported_at": now - timedelta(minutes=8),
+                "description": "Outside mall",
+                "lat": 1.3,
+                "lng": 103.8,
+                "reporter_id": 200,
+                "reporter_badge": "Regular",
+                "feedback_positive": 0,
+                "feedback_negative": 0,
             },
             {
-                "zone": "Bugis", "reported_at": now - timedelta(minutes=20),
-                "description": None, "lat": None, "lng": None,
-                "reporter_id": 100, "reporter_badge": "New",
-                "feedback_positive": 1, "feedback_negative": 0,
+                "zone": "Bugis",
+                "reported_at": now - timedelta(minutes=20),
+                "description": None,
+                "lat": None,
+                "lng": None,
+                "reporter_id": 100,
+                "reporter_badge": "New",
+                "feedback_positive": 1,
+                "feedback_negative": 0,
             },
         ]
 
@@ -198,10 +248,12 @@ class TestBuildRecentTextNoPlusOne:
             get_recent_sightings_for_zones=sightings,
         )
         # Add the batch method to the mock
-        mock_db.calculate_accuracy_batch = AsyncMock(return_value={
-            100: (0.85, 8),
-            200: (0.0, 0),
-        })
+        mock_db.calculate_accuracy_batch = AsyncMock(
+            return_value={
+                100: (0.85, 8),
+                200: (0.0, 0),
+            }
+        )
 
         with (
             patch("bot.handlers.user.get_db", return_value=mock_db),
@@ -257,10 +309,15 @@ class TestBuildRecentTextNoPlusOne:
         now = datetime.now(timezone.utc)
         sightings = [
             {
-                "zone": "Bugis", "reported_at": now - timedelta(minutes=2),
-                "description": "test", "lat": None, "lng": None,
-                "reporter_id": 100, "reporter_badge": "Trusted",
-                "feedback_positive": 5, "feedback_negative": 0,
+                "zone": "Bugis",
+                "reported_at": now - timedelta(minutes=2),
+                "description": "test",
+                "lat": None,
+                "lng": None,
+                "reporter_id": 100,
+                "reporter_badge": "Trusted",
+                "feedback_positive": 5,
+                "feedback_negative": 0,
             },
         ]
 
@@ -268,9 +325,11 @@ class TestBuildRecentTextNoPlusOne:
             get_subscriptions={"Bugis"},
             get_recent_sightings_for_zones=sightings,
         )
-        mock_db.calculate_accuracy_batch = AsyncMock(return_value={
-            100: (0.95, 20),  # High accuracy -> checkmark indicator
-        })
+        mock_db.calculate_accuracy_batch = AsyncMock(
+            return_value={
+                100: (0.95, 20),  # High accuracy -> checkmark indicator
+            }
+        )
 
         with (
             patch("bot.handlers.user.get_db", return_value=mock_db),

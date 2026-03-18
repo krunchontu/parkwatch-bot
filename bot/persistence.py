@@ -73,9 +73,7 @@ class JsonFilePersistence(DictPersistence):
 
         try:
             tmp_path = self._filepath.with_suffix(".tmp")
-            tmp_path.write_text(
-                json.dumps(data, indent=2), encoding="utf-8"
-            )
+            tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
             # Restrict permissions before moving into place
             os.chmod(tmp_path, 0o600)
             tmp_path.replace(self._filepath)

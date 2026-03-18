@@ -96,9 +96,7 @@ async def admin_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             return
 
         announce_text = f"\U0001f4e3 {pending['message']}"
-        sent, failed, blocked = await broadcast_message(
-            context.bot, pending["recipient_ids"], announce_text
-        )
+        sent, failed, blocked = await broadcast_message(context.bot, pending["recipient_ids"], announce_text)
 
         # Clean up subscriptions for users who blocked the bot
         for uid in blocked:

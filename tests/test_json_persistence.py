@@ -93,9 +93,7 @@ class TestJsonFilePersistence:
         user_data = _run(p.get_user_data())
         assert user_data == {}
 
-    @pytest.mark.skipif(
-        os.name == "nt", reason="File permissions not meaningful on Windows"
-    )
+    @pytest.mark.skipif(os.name == "nt", reason="File permissions not meaningful on Windows")
     def test_file_permissions_0600(self, tmp_path):
         """Persistence file is created with 0600 permissions."""
         filepath = tmp_path / "persist.json"
