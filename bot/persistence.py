@@ -29,24 +29,25 @@ class JsonFilePersistence(DictPersistence):
     other users on the system from reading conversation state.
     """
 
-    def __init__(self, filepath: str | Path, **kwargs) -> None:
+    def __init__(self, filepath: str | Path, **kwargs) -> None:  # type: ignore[override]
         self._filepath = Path(filepath)
 
         # Load existing data from disk if available
-        init_kwargs: dict[str, str] = {}
+        user_data_json = ""
+        chat_data_json = ""
+        bot_data_json = ""
+        conversations_json = ""
+        callback_data_json = ""
+
         if self._filepath.exists():
             try:
                 raw = self._filepath.read_text(encoding="utf-8")
                 data = json.loads(raw)
-                for key in (
-                    "user_data_json",
-                    "chat_data_json",
-                    "bot_data_json",
-                    "conversations_json",
-                    "callback_data_json",
-                ):
-                    if key in data and data[key]:
-                        init_kwargs[key] = data[key]
+                user_data_json = data.get("user_data_json", "") or ""
+                chat_data_json = data.get("chat_data_json", "") or ""
+                bot_data_json = data.get("bot_data_json", "") or ""
+                conversations_json = data.get("conversations_json", "") or ""
+                callback_data_json = data.get("callback_data_json", "") or ""
                 logger.info("Loaded persistence data from %s", self._filepath)
             except (json.JSONDecodeError, OSError) as exc:
                 logger.warning(
@@ -55,7 +56,14 @@ class JsonFilePersistence(DictPersistence):
                     exc,
                 )
 
-        super().__init__(**init_kwargs, **kwargs)
+        super().__init__(
+            user_data_json=user_data_json,
+            chat_data_json=chat_data_json,
+            bot_data_json=bot_data_json,
+            conversations_json=conversations_json,
+            callback_data_json=callback_data_json,
+            **kwargs,
+        )
 
     async def flush(self) -> None:
         """Write all persistence data to the JSON file.
